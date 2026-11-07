@@ -39,24 +39,32 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# Release notes for the GitHub Release body, built from the Conventional
+# Commits since the previous tag (see AGENTS.md → Commit messages).
 changelog:
+  disable: false
+  use: github # commit links + GitHub usernames
   sort: asc
-  use: github
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
-      - Merge pull request
-      - Merge branch
+      # Housekeeping, incl. the `chore(release): vX.Y.Z` commit from `task bump`.
+      # Breaking changes (`type!:`) are never excluded.
+      - '^(docs|test|chore|ci|style|build)(\([^)]*\))?:'
+      - "^Merge pull request"
+      - "^Merge branch"
   groups:
-    - title: Features
-      regexp: '^.*?feat(\(.+\))??!?:.+$'
+    - title: Breaking changes
+      regexp: '^\w+(\([^)]*\))?!:.+$'
       order: 0
-    - title: Bug fixes
-      regexp: '^.*?fix(\(.+\))??!?:.+$'
+    - title: Features
+      regexp: '^feat(\([^)]*\))?:.+$'
       order: 1
+    - title: Bug fixes
+      regexp: '^fix(\([^)]*\))?:.+$'
+      order: 2
+    - title: Performance
+      regexp: '^perf(\([^)]*\))?:.+$'
+      order: 3
     - title: Other changes
       order: 999
 
@@ -66,6 +74,8 @@ release:
     name: vault-sync
   prerelease: auto
   draft: false
+  footer: |
+    {{ if .PreviousTag }}**Full changelog**: https://github.com/jordigarciaventura/vault-sync/compare/{{ .PreviousTag }}...{{ .Tag }}{{ end }}
 
 # Homebrew cask in github.com/jordigarciaventura/homebrew-tap (Casks/vault-sync.rb).
 # GoReleaser v2.10+ publishes casks; the legacy `brews` (formula) section is deprecated.

@@ -4,9 +4,12 @@ version: "3"
 vars:
   BINARY: vault-sync
   PKG: github.com/jordigarciaventura/vault-sync
-  # Override with: task build VERSION=v1.2.3
+  # Released version (source of truth; change it with `task bump`).
+  RELEASE_VERSION:
+    sh: tr -d ' \t\r\n' < VERSION
+  # Version stamped into local builds. Override with: task build VERSION=v1.2.3
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "v$(tr -d ' \t\r\n' < VERSION)-dev"
   LDFLAGS: -s -w -X {{.PKG}}/internal/version.Version={{.VERSION}}
 
 tasks:
@@ -81,6 +84,17 @@ tasks:
       - git config core.hooksPath .githooks
       - cmd: echo "Git hooks installed (core.hooksPath=.githooks)"
         silent: true
+
+  version:
+    desc: Print the current release version (from VERSION)
+    silent: true
+    cmds:
+      - echo "{{.RELEASE_VERSION}}"
+
+  bump:
+    desc: "Bump VERSION, commit and tag it (task bump [-- patch|minor|major], default patch)"
+    cmds:
+      - sh scripts/bump-version.sh {{.CLI_ARGS}}
 
   release-check:
     desc: Validate .goreleaser.yaml

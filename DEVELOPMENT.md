@@ -37,6 +37,8 @@ task tidy         # go mod tidy
 task docs         # regenerate the command reference in README.md
 task docs-check   # fail if the command reference is out of date
 task snapshot     # build release artifacts locally into dist/
+task version      # print the current release version (VERSION)
+task bump         # release: bump patch in VERSION, commit + tag (-- minor | -- major)
 task clean        # remove bin/, dist/
 task              # list all tasks
 ```
@@ -50,7 +52,7 @@ directory you call it from, so `secrets.yaml` is found there (or in a parent),
 exactly as with an installed binary:
 
 ```bash
-task run -- version -v               # git describe output, or "dev" before the first commit
+task run -- version -v               # git describe output (v0.1.0-3-gabc123-dirty), or v<VERSION>-dev without tags
 task run -- help
 task run -- pull --dry-run --verbose
 ```
@@ -165,7 +167,7 @@ CI runs the same generator with `-check` and fails if the README is stale.
 | Hook         | Runs                                                                                   |
 | ------------ | -------------------------------------------------------------------------------------- |
 | `pre-commit` | blocks staged `.env`/`.key`/`.pem` files; `gofmt`, `go vet`, golangci-lint on new code |
-| `commit-msg` | enforces [Conventional Commits](https://www.conventionalcommits.org/)                  |
+| `commit-msg` | enforces [Conventional Commits](https://www.conventionalcommits.org/) (rules in [AGENTS.md](AGENTS.md#commit-messages)) |
 | `pre-push`   | `go test -race ./...`                                                                  |
 
 **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull
@@ -189,6 +191,8 @@ internal/updater/            GitHub release check (cached, non-blocking) + self-
 internal/version/            ldflags-injected build metadata
 tools/docgen/                regenerates the README command reference
 test/e2e/                    end-to-end tests of the binary against real accounts (e2e build tag)
+scripts/bump-version.sh      bumps VERSION, commits and tags a release (task bump)
+VERSION                      current release version (source of truth for release tags)
 ```
 
 `internal/cli` → `internal/config` + `internal/sync` → `backend.Backend`
@@ -224,6 +228,35 @@ with JSON bodies so values are exact and never appear in `ps`.
 
 Releases are fully automated from Git tags.
 
+### Versioning
+
+The current version is tracked in [`VERSION`](VERSION) at the repository root
+as plain `MAJOR.MINOR.PATCH` (no `v` prefix); `task version` prints it.
+Release tags are `v` + that value (`0.1.0` → `v0.1.0`), and GoReleaser
+injects the tag into the binary via `-ldflags`, so `vault-sync version`
+reports it. Local builds (`task build`) use `git describe` instead, e.g.
+`v0.1.0-3-gabc123-dirty`, falling back to `v<VERSION>-dev` when there is no
+tag.
+
+Do not edit `VERSION` or create tags by hand; use `task bump`:
+
+| Command               | Example         | Use for                                     |
+| --------------------- | --------------- | ------------------------------------------- |
+| `task bump`           | 0.1.0 → 0.1.1   | fixes only (patch, the default; `fix` is an alias) |
+| `task bump -- minor`  | 0.1.1 → 0.2.0   | new features, backwards compatible          |
+| `task bump -- major`  | 0.2.0 → 1.0.0   | breaking changes (`type!:` commits)         |
+
+`task bump` ([scripts/bump-version.sh](scripts/bump-version.sh)) refuses to
+run unless you are on `main` with a clean working tree and the new tag does
+not exist yet. It then writes `VERSION`, commits it as
+`chore(release): vX.Y.Z` and creates the annotated tag `vX.Y.Z`. It does
+**not** push. The Release workflow fails if the pushed tag does not match
+`VERSION`.
+
+Pick the part from the commits since the last tag
+(`git log --oneline $(git describe --tags --abbrev=0)..`): any `!` means
+major (minor while still on `0.x`), any `feat` means minor, otherwise patch.
+
 ### One-time setup
 
 1. Create the public tap repository **`jordigarciaventura/homebrew-tap`** with a
@@ -241,24 +274,39 @@ Releases are fully automated from Git tags.
 ```bash
 git switch main && git pull
 task test && task docs-check && task release-check   # optional local sanity check
-git tag -a v1.2.0 -m "v1.2.0"
-git push origin v1.2.0
+task bump -- minor                                   # or: task bump / task bump -- major
+git push origin main v1.2.0                          # the commit and the tag it printed
 ```
 
 The **Release** workflow then:
 
-1. runs `go vet` and the race test suite;
+1. checks that the tag matches `VERSION`, then runs `go vet` and the race
+   test suite;
 2. builds `darwin/{amd64,arm64}` and `linux/{amd64,arm64}` binaries with the
    version injected via `-ldflags`;
 3. generates `checksums.txt` (SHA-256);
-4. publishes the GitHub Release with a changelog grouped by Conventional
-   Commit type;
+4. publishes the GitHub Release; its notes are the changelog GoReleaser
+   builds from the commits since the previous tag (`changelog` in
+   [.goreleaser.yaml](.goreleaser.yaml), `use: github`), grouped as
+   *Breaking changes* (`type!:`), *Features* (`feat`), *Bug fixes* (`fix`),
+   *Performance* (`perf`) and *Other changes*, followed by a "Full
+   changelog" compare link. `docs`, `test`, `build`, `ci`, `style` and
+   `chore` commits (including the `chore(release)` bump) are omitted, so
+   commit subjects must follow the rules in
+   [AGENTS.md → Commit messages](AGENTS.md#commit-messages);
 5. commits the updated cask to `homebrew-tap`.
 
 Versions follow [SemVer](https://semver.org/). Tags with a pre-release suffix
 (`v1.3.0-rc.1`) are published as GitHub pre-releases, are **not** pushed to the
-tap and do not trigger update notifications.
+tap and do not trigger update notifications. `task bump` does not create
+them: bump first, then tag the pre-release by hand with the version from
+`VERSION` (`git tag -a v1.3.0-rc.1 -m v1.3.0-rc.1`); the release check accepts
+`v<VERSION>` and `v<VERSION>-<suffix>`.
 
 If a release fails halfway, delete the GitHub Release and the tag
-(`git push --delete origin vX.Y.Z && git tag -d vX.Y.Z`), fix the problem and
-tag again.
+(`git push --delete origin vX.Y.Z && git tag -d vX.Y.Z`), fix the problem on
+`main` and re-create the tag on the fixed commit
+(`git tag -a vX.Y.Z -m vX.Y.Z && git push origin main vX.Y.Z`); `VERSION`
+already holds the right value, so do not run `task bump` again. If the tag
+was never pushed, undo the bump locally with `git tag -d vX.Y.Z && git reset
+--hard HEAD~1`.

@@ -22,6 +22,8 @@ authentication, REST API for secrets).
 | Format                  | `task fmt`                                      |
 | Release config check    | `task release-check` (GoReleaser ≥ 2.19)        |
 | Regenerate CLI docs     | `task docs` (README command reference)          |
+| Current version         | `task version` (reads `VERSION`)                |
+| Cut a release           | `task bump [-- minor\|major]` (user only)       |
 
 Run `go vet ./... && task test` before declaring any change done. After
 changing a command, flag or help text, run `task docs` (CI fails if
@@ -68,6 +70,8 @@ internal/updater/        GitHub release check (cached, non-blocking) + self-upgr
 internal/version/        ldflags-injected build metadata
 tools/docgen/            regenerates the README command reference (task docs)
 test/e2e/                end-to-end tests of the built binary (e2e tag); manifests in testdata/
+scripts/bump-version.sh  bumps VERSION, commits and tags (task bump)
+VERSION                  current release version, MAJOR.MINOR.PATCH (source of truth)
 ```
 
 ## Architecture rules (do not break)
@@ -114,12 +118,49 @@ test/e2e/                end-to-end tests of the built binary (e2e tag); manifes
   errors should say how to fix the problem.
 - Tests: table-driven where it helps, `t.TempDir()` for filesystem work, no
   network (use `httptest`).
-- Commits: Conventional Commits (`feat:`, `fix:`, `docs:` …) — enforced by
-  `.githooks/commit-msg` and used to group release notes.
+- Commits: Conventional Commits, see **Commit messages** below.
 - Do not commit, tag or push unless the user asks.
+
+## Commit messages
+
+Every commit follows [Conventional Commits 1.0](https://www.conventionalcommits.org/).
+`.githooks/commit-msg` rejects anything else, and GoReleaser builds the
+GitHub Release notes from these subjects, so they are user-facing text.
+
+```
+<type>(<optional scope>)!: <description>
+
+<optional body: what and why, wrapped at 72>
+
+<optional footer, e.g. BREAKING CHANGE: …>
+```
+
+- **Types**: `feat` (new user-visible behaviour), `fix` (bug fix), `perf`,
+  `refactor`, `docs`, `test`, `build`, `ci`, `style`, `chore`, `revert`.
+- **Scope** (optional, lower-case): the area touched, e.g. `bitwarden`,
+  `infisical`, `cli`, `config`, `sync`, `updater`, `toolinstall`.
+- **Description**: imperative mood, lower-case, no trailing period, ≤ 72
+  characters (`feat(infisical): support self-hosted servers`).
+- **Breaking changes**: add `!` before the colon (`feat(config)!: rename
+  project to folder`) and explain the migration in a `BREAKING CHANGE:`
+  footer. They appear first in the release notes.
+- One logical change per commit; do not mix a `feat` with unrelated
+  refactors.
+- Release notes: `feat` → Features, `fix` → Bug fixes, `perf` →
+  Performance, `refactor`/`revert` → Other changes. `docs`, `test`, `build`,
+  `ci`, `style` and `chore` are left out (unless breaking), so choose the
+  type by what users notice, not by which files changed.
+- `chore(release): vX.Y.Z` is reserved for `task bump`.
 
 ## Releasing
 
-Tag `vX.Y.Z` on `main` and push the tag; `.github/workflows/release.yml`
-runs GoReleaser, which publishes the GitHub Release and updates the cask in
-`jordigarciaventura/homebrew-tap`. Details in DEVELOPMENT.md → "Releasing".
+The version lives in `VERSION` (`MAJOR.MINOR.PATCH`, without the
+`v`). On `main`, `task bump` (patch, the default), `task bump -- minor` or
+`task bump -- major` updates `VERSION`, commits `chore(release): vX.Y.Z` and
+creates the annotated tag; pushing it (`git push origin main vX.Y.Z`) makes
+`.github/workflows/release.yml` run GoReleaser, which publishes the GitHub
+Release with the changelog and updates the cask in
+`jordigarciaventura/homebrew-tap`. The workflow fails if the tag does not
+match `VERSION`. Never edit `VERSION` or create release tags by hand, and
+do not run `task bump` unless the user asks. Details in DEVELOPMENT.md →
+"Releasing".

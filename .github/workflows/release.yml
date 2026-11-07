@@ -19,6 +19,16 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      - name: Check tag matches VERSION
+        run: |
+          want="v$(tr -d ' \t\r\n' < VERSION)"
+          case "$GITHUB_REF_NAME" in
+            "$want" | "$want"-*) ;; # vX.Y.Z or a pre-release vX.Y.Z-rc.N
+            *)
+              echo "::error::tag $GITHUB_REF_NAME does not match VERSION ($want); create releases with 'task bump'"
+              exit 1
+              ;;
+          esac
       - run: go vet ./...
       - run: go test -race ./...
 
