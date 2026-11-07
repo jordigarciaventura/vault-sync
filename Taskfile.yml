@@ -1,0 +1,98 @@
+# https://taskfile.dev
+version: "3"
+
+vars:
+  BINARY: vault-sync
+  PKG: github.com/jordigarciaventura/vault-sync
+  # Override with: task build VERSION=v1.2.3
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  LDFLAGS: -s -w -X {{.PKG}}/internal/version.Version={{.VERSION}}
+
+tasks:
+  default:
+    desc: Show available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Build ./bin/vault-sync
+    cmds:
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o bin/{{.BINARY}} ./cmd/vault-sync
+
+  run:
+    desc: "Build and run the local binary in the current directory (task run -- pull --dry-run)"
+    dir: "{{.USER_WORKING_DIR}}"
+    interactive: true
+    deps: [build]
+    cmds:
+      - "{{.ROOT_DIR}}/bin/{{.BINARY}} {{.CLI_ARGS}}"
+
+  install:
+    desc: Install into $GOBIN
+    cmds:
+      - go install -trimpath -ldflags "{{.LDFLAGS}}" ./cmd/vault-sync
+
+  test:
+    desc: Run unit tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  test-integration:
+    desc: Run Bitwarden integration tests (needs BW_SESSION and VAULT_SYNC_IT_PROJECT)
+    cmds:
+      - go test -tags integration -count=1 -v ./internal/backend/bitwarden/
+
+  test-e2e:
+    desc: "Run end-to-end tests against real test accounts (all backends; limit with VAULT_SYNC_E2E=bitwarden)"
+    cmds:
+      - go test -tags e2e -count=1 -v ./test/e2e/
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format code
+    cmds:
+      - gofmt -w .
+      - golangci-lint fmt ./... 2>/dev/null || true
+
+  tidy:
+    desc: Tidy go.mod
+    cmds:
+      - go mod tidy
+
+  docs:
+    desc: Regenerate the command reference in README.md from the CLI
+    cmds:
+      - go run ./tools/docgen
+
+  docs-check:
+    desc: Fail if the command reference in README.md is out of date
+    cmds:
+      - go run ./tools/docgen -check
+
+  hooks:
+    desc: Install git hooks from .githooks
+    cmds:
+      - git config core.hooksPath .githooks
+      - cmd: echo "Git hooks installed (core.hooksPath=.githooks)"
+        silent: true
+
+  release-check:
+    desc: Validate .goreleaser.yaml
+    cmds:
+      - goreleaser check
+
+  snapshot:
+    desc: Build release artifacts locally without publishing
+    cmds:
+      - goreleaser release --snapshot --clean --skip=publish
+
+  clean:
+    desc: Remove build output
+    cmds:
+      - rm -rf bin dist coverage.out

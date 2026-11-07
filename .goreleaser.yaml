@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# Release configuration. Run `task release-check` / `task snapshot` locally.
+version: 2
+
+project_name: vault-sync
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: vault-sync
+    main: ./cmd/vault-sync
+    binary: vault-sync
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/jordigarciaventura/vault-sync/internal/version.Version=v{{ .Version }}
+      - -X github.com/jordigarciaventura/vault-sync/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/jordigarciaventura/vault-sync/internal/version.Date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    # Must match updater.ArchiveName (used by `vault-sync self-upgrade`).
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other changes
+      order: 999
+
+release:
+  github:
+    owner: jordigarciaventura
+    name: vault-sync
+  prerelease: auto
+  draft: false
+
+# Homebrew cask in github.com/jordigarciaventura/homebrew-tap (Casks/vault-sync.rb).
+# GoReleaser v2.10+ publishes casks; the legacy `brews` (formula) section is deprecated.
+homebrew_casks:
+  - name: vault-sync
+    binaries: [vault-sync]
+    homepage: https://github.com/jordigarciaventura/vault-sync
+    description: Restore project files from a secrets provider using a declarative secrets.yaml
+    repository:
+      owner: jordigarciaventura
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "chore: vault-sync {{ .Tag }}"
+    # Do not publish release candidates (v1.2.0-rc.1) to the tap.
+    skip_upload: auto
+    # No provider CLI dependency: vault-sync installs the CLI a project's
+    # backend needs (bw, infisical) on first use (internal/toolinstall).
+    caveats: |
+      vault-sync installs the CLI of the backend your secrets.yaml uses
+      (bitwarden-cli or infisical) with Homebrew the first time it is needed.
+    hooks:
+      post:
+        # Release binaries are not notarized; drop the quarantine flag so
+        # Gatekeeper does not block the CLI.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/vault-sync"]
+          end

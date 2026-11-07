@@ -1,0 +1,48 @@
+#!/bin/sh
+# Fast checks on staged changes. Install with `task hooks`.
+set -eu
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+# 1. Never commit files that look like synchronized secrets.
+suspicious=$(printf '%s\n' "$staged" \
+  | grep -v -E '\.(example|sample|template)$' \
+  | grep -E '(^|/)\.env(\..*)?$|\.key$|\.pem$' || true)
+if [ -n "$suspicious" ]; then
+  echo "pre-commit: refusing to commit files that look like secrets:" >&2
+  echo "$suspicious" >&2
+  echo "use 'git commit --no-verify' if this is intentional." >&2
+  exit 1
+fi
+
+# 2. Go checks, only when Go sources or modules changed.
+go_changed=$(printf '%s\n' "$staged" | grep -E '\.go$|^go\.(mod|sum)$' || true)
+[ -z "$go_changed" ] && exit 0
+
+go_files=$(printf '%s\n' "$staged" | grep '\.go$' || true)
+if [ -n "$go_files" ]; then
+  # shellcheck disable=SC2086
+  unformatted=$(gofmt -l $go_files)
+  if [ -n "$unformatted" ]; then
+    echo "pre-commit: these files are not gofmt'ed (run 'task fmt'):" >&2
+    echo "$unformatted" >&2
+    exit 1
+  fi
+fi
+
+go vet ./...
+
+if command -v golangci-lint >/dev/null 2>&1; then
+  lint_args=""
+  if git rev-parse --verify -q HEAD >/dev/null; then
+    lint_args="--new-from-rev=HEAD"
+  fi
+  # shellcheck disable=SC2086
+  golangci-lint run $lint_args ./... || {
+    echo "pre-commit: golangci-lint failed (run 'task lint')" >&2
+    exit 1
+  }
+else
+  echo "pre-commit: golangci-lint not installed; skipping lint (CI runs it)" >&2
+fi

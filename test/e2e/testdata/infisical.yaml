@@ -1,0 +1,15 @@
+# Manifest used by the end-to-end tests (test/e2e). Point it at a dedicated
+# test account: the tests overwrite .env in this project (created on first
+# push if it does not exist).
+#
+# No account is pinned, so whoever is logged in to infisical runs the tests.
+# To pin one, set VAULT_SYNC_E2E_INFISICAL_ACCOUNT (or add `account:` below
+# for manual runs).
+backend:
+  type: infisical
+  server: https://app.infisical.com
+
+project: vault-sync-e2e
+
+files:
+  - path: .env

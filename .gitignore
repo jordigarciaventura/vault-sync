@@ -1,0 +1,13 @@
+/bin/
+/dist/
+coverage.out
+*.test
+
+# Never commit synchronized secrets from examples or manual testing.
+.env
+.env.*
+*.key
+*.pem
+
+# Local agent settings
+.claude/settings.local.json

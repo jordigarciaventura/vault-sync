@@ -1,0 +1,4 @@
+#!/bin/sh
+# Full test suite before pushing. Install with `task hooks`.
+set -eu
+go test -race ./...

@@ -1,0 +1,13 @@
+# Manifest used by the end-to-end tests (test/e2e). Point it at a dedicated
+# test account: the tests overwrite .env in this project.
+#
+# No account is pinned, so whoever is logged in to bw runs the tests. To pin
+# one, set VAULT_SYNC_E2E_BITWARDEN_ACCOUNT (or add `account:` below for
+# manual runs).
+backend:
+  type: bitwarden
+
+project: vault-sync-e2e
+
+files:
+  - path: .env
