@@ -1,6 +1,7 @@
 package bitwarden
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -175,6 +176,7 @@ func (v *fakeVault) Run(_ context.Context, env []string, stdin []byte, args ...s
 		}
 		existing := v.find(args[2])
 		existing.Notes = it.Notes
+		existing.Fields = it.Fields
 		return json.Marshal(existing)
 	case "get attachment":
 		data, ok := v.attachments[args[2]]
@@ -444,19 +446,95 @@ func TestStoreCreatesFolderAndNote(t *testing.T) {
 	}
 }
 
-func TestStoreBinaryCreatesAttachment(t *testing.T) {
+func TestStoreBinaryCreatesEncodedNote(t *testing.T) {
 	v := newFakeVault()
 	b := newTestBackend(t, v, "")
 	content := []byte{0xff, 0x00, 0x10}
 	if err := b.StoreFile(context.Background(), "P", "keys/a.key", content); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.items) != 1 || len(v.items[0].Attachments) != 1 || v.items[0].Attachments[0].FileName != "a.key" {
+	if len(v.items) != 1 || len(v.items[0].Attachments) != 0 || len(v.items[0].Fields) != 1 || v.items[0].Fields[0].Value != "base64" || *v.items[0].Notes != base64.StdEncoding.EncodeToString(content) {
 		t.Fatalf("items = %+v", v.items)
 	}
 	got, err := read(t, b, "P", "keys/a.key")
 	if err != nil || got != string(content) {
 		t.Fatalf("roundtrip got %q, %v", got, err)
+	}
+}
+
+func TestNoteStorageBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		content    []byte
+		attachment bool
+		encoded    bool
+	}{
+		{"empty", nil, false, false},
+		{"text at limit", bytes.Repeat([]byte("x"), maxNoteSize), false, false},
+		{"text over limit", bytes.Repeat([]byte("x"), maxNoteSize+1), true, false},
+		{"binary at limit", bytes.Repeat([]byte{0xff}, 3750), false, true},
+		{"binary over limit", bytes.Repeat([]byte{0xff}, 3751), true, false},
+		{"NUL bytes", []byte{'a', 0, 'b'}, false, true},
+		{"literal Base64", []byte("AP8Q"), false, false},
+		{"literal marker", []byte("vault-sync.encoding:base64"), false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := newFakeVault()
+			// Emulate a free account: only files over the limit need attachments.
+			if !tc.attachment {
+				v.failOn = "create attachment"
+				v.failMsg = "Premium status is required to use this feature."
+			}
+			if err := newTestBackend(t, v, "").StoreFile(context.Background(), "P", "file", tc.content); err != nil {
+				t.Fatal(err)
+			}
+			it := v.items[0]
+			if (len(it.Attachments) > 0) != tc.attachment || (len(it.Fields) > 0) != tc.encoded {
+				t.Fatal("unexpected storage representation")
+			}
+			got, err := read(t, newTestBackend(t, v, ""), "P", "file")
+			if err != nil || !bytes.Equal([]byte(got), tc.content) {
+				t.Fatalf("roundtrip mismatch: %v", err)
+			}
+		})
+	}
+}
+
+func TestNoteEncodingTransitions(t *testing.T) {
+	v := newFakeVault()
+	it := v.addNote(v.addFolder("P"), "file", "old")
+	it.Fields = []customField{{Name: "unrelated", Value: "keep", Type: 1}}
+	for _, content := range [][]byte{{0, 0xff}, []byte("plain"), {0xff, 1}, bytes.Repeat([]byte{0}, 3751)} {
+		if err := newTestBackend(t, v, "").StoreFile(context.Background(), "P", "file", content); err != nil {
+			t.Fatal(err)
+		}
+		got, err := read(t, newTestBackend(t, v, ""), "P", "file")
+		if err != nil || got != string(content) {
+			t.Fatalf("roundtrip mismatch: %v", err)
+		}
+		if len(v.items) != 1 || v.items[0].Fields[0].Name != "unrelated" || v.items[0].Fields[0].Value != "keep" || v.items[0].Fields[0].Type != 1 {
+			t.Fatal("update lost unrelated custom field")
+		}
+		if len(v.items[0].Attachments) > 0 && len(v.items[0].Fields) != 1 {
+			t.Fatal("attachment retained encoding marker")
+		}
+	}
+}
+
+func TestResolveMalformedEncodedNote(t *testing.T) {
+	for _, encoding := range []string{"base64", "unknown-secret-encoding"} {
+		t.Run(encoding, func(t *testing.T) {
+			v := newFakeVault()
+			it := v.addNote(v.addFolder("P"), "file", "PRIVATE_INVALID_BASE64!")
+			it.Fields = []customField{{Name: noteEncodingField, Value: encoding}}
+			r, err := newTestBackend(t, v, "").ResolveFile(context.Background(), "P", "file")
+			if r != nil || err == nil {
+				t.Fatal("expected failure without a reader")
+			}
+			if strings.Contains(err.Error(), *it.Notes) || strings.Contains(err.Error(), encoding) && encoding != "base64" {
+				t.Fatal("error leaked secret contents")
+			}
+		})
 	}
 }
 
@@ -549,7 +627,7 @@ func TestStoreAttachmentWithoutPremiumLeavesNoItem(t *testing.T) {
 	v.failMsg = "Premium status is required to use this feature."
 	b := newTestBackend(t, v, "")
 
-	err := b.StoreFile(context.Background(), "P", "big.bin", []byte{0, 1, 2})
+	err := b.StoreFile(context.Background(), "P", "big.bin", make([]byte, maxNoteSize))
 	if !errors.Is(err, ErrPremiumRequired) {
 		t.Fatalf("want ErrPremiumRequired, got %v", err)
 	}
@@ -562,7 +640,7 @@ func TestStoreAttachmentOtherFailureIsNotPremium(t *testing.T) {
 	v := newFakeVault()
 	v.addFolder("P")
 	v.failOn = "create attachment"
-	err := newTestBackend(t, v, "").StoreFile(context.Background(), "P", "big.bin", []byte{0})
+	err := newTestBackend(t, v, "").StoreFile(context.Background(), "P", "big.bin", make([]byte, maxNoteSize))
 	if err == nil || errors.Is(err, ErrPremiumRequired) {
 		t.Fatalf("got %v", err)
 	}

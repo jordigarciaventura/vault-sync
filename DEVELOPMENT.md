@@ -217,6 +217,15 @@ representations (notes and attachments) with the user's existing login. A
 `bws`-based backend can be added later as a separate backend type without
 changing manifests' `files` or `project`.
 
+**Bitwarden binary notes.** The backend keeps text notes literal and stores
+binary files as Base64 when the encoded body fits the 5,000-byte note limit
+(3,750 original bytes). The `vault-sync.encoding=base64` custom field marks
+encoded notes; unmarked notes are never decoded. Updates preserve unrelated
+custom fields and remove the marker when switching to text or attachments.
+Malformed encoded notes fail without returning partial content or including
+note contents in errors. Unit tests cover free-account binary round trips,
+size boundaries and transitions between storage representations.
+
 **Why the REST API for Infisical secrets?** The `infisical secrets` commands
 expand `${…}` references by default, append a newline in `--plain` mode,
 and behave differently across CLI versions (`secrets set KEY=@file` stores the

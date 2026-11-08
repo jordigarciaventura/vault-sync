@@ -312,7 +312,7 @@ self-hosted servers via `bw config server`) are handled by Bitwarden itself.
 file is stored as one of:
 
 1. a **Secure Note** whose name is the logical name (e.g. `backend/.env`); the
-   note body is the file content, or
+   note body is the file content (plain text or Base64-encoded binary), or
 2. an **attachment**, either on an item whose name is the logical name (the
    attachment is named after the file's base name, e.g. `firmware-signing.key`),
    or on any item in the folder with an attachment named exactly the logical
@@ -323,12 +323,25 @@ it fails with "not found"; if more than one resource matches (two notes with the
 same name, a note *and* an attachment, two folders with the project name) it
 fails with an ambiguity error instead of guessing.
 
-`push` creates the folder if needed and stores small UTF-8 text files
-(≤ 5,000 bytes) as Secure Notes and anything larger or binary as an
-attachment. Existing resources keep their representation; a note that grows
-too large is converted to an attachment. Attachments require a Bitwarden
-Premium or organization plan; without one, pushing a large or binary file fails
-with a clear error and leaves nothing behind in the vault.
+`push` creates the folder if needed and stores UTF-8 text files (without NUL
+bytes, ≤ 5,000 bytes) as plain Secure Notes. Small binary files, such as an
+Android `upload.keystore`, are Base64-encoded into Secure Notes automatically:
+up to **3,750 original bytes**, so the encoded body fits within 5,000 bytes.
+Both work with a **free Bitwarden account**. Keep the original file path in
+`secrets.yaml`; `pull` decodes binary notes back to the exact original bytes.
+No manual encoding or decoding is needed.
+
+Encoded notes carry a `vault-sync.encoding` custom field set to `base64`.
+Leave that field intact; notes without it are always read literally, even if
+they look like Base64. Older vault-sync versions do not decode these notes;
+update vault-sync on every machine before pulling encoded files.
+
+Files above these limits use attachments. Existing attachments remain
+attachments; existing notes switch between plain text and Base64 as needed,
+or convert to attachments when their stored body would exceed 5,000 bytes.
+Attachments require a Bitwarden Premium or organization plan; without one,
+pushing an oversized file fails with a clear error and removes any empty
+item created for that failed upload.
 
 **Authentication.** `vault-sync` reads `bw status`:
 

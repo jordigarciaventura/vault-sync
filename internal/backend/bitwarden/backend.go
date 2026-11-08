@@ -11,6 +11,7 @@ package bitwarden
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,10 +28,13 @@ import (
 // Type is the identifier used in secrets.yaml.
 const Type = "bitwarden"
 
-// maxNoteSize is the largest file stored as a Secure Note body. Bitwarden caps
+// maxNoteSize is the largest plaintext or encoded Secure Note body. Bitwarden caps
 // encrypted notes at 10,000 characters, and encryption inflates the plaintext
 // by roughly a third, so larger files are stored as attachments instead.
 const maxNoteSize = 5000
+
+// Encoding is metadata rather than a body prefix so existing notes stay literal.
+const noteEncodingField = "vault-sync.encoding"
 
 // Backend is the Bitwarden implementation of backend.Backend.
 type Backend struct {
@@ -245,6 +249,19 @@ func (b *Backend) ResolveFile(ctx context.Context, project, filename string) (io
 		if m.item.Notes != nil {
 			notes = *m.item.Notes
 		}
+		for _, field := range m.item.Fields {
+			if field.Name != noteEncodingField {
+				continue
+			}
+			if field.Value != "base64" {
+				return nil, fmt.Errorf("unsupported Secure Note encoding; upgrade vault-sync or correct the %s custom field in Bitwarden", noteEncodingField)
+			}
+			content, err := base64.StdEncoding.Strict().DecodeString(notes)
+			if err != nil {
+				return nil, fmt.Errorf("invalid Base64 in Secure Note; restore the note from a backup or push the original file again")
+			}
+			return io.NopCloser(bytes.NewReader(content)), nil
+		}
 		return io.NopCloser(strings.NewReader(notes)), nil
 	default:
 		return &lazyReader{fetch: func() ([]byte, error) {
@@ -274,8 +291,8 @@ func single(project, filename string, items []item) (match, error) {
 }
 
 // StoreFile implements backend.Backend. New files become Secure Notes when they
-// are small UTF-8 text and attachments otherwise; existing resources keep
-// their representation unless a note grows too large.
+// hold small text or Base64-encoded binary data, and attachments otherwise.
+// Existing resources keep their representation unless a note grows too large.
 func (b *Backend) StoreFile(ctx context.Context, project, filename string, content []byte) error {
 	if err := b.Authenticate(ctx); err != nil {
 		return err
@@ -295,19 +312,20 @@ func (b *Backend) StoreFile(ctx context.Context, project, filename string, conte
 		_, err := single(project, filename, items)
 		return err
 	}
-	text := fitsInNote(content)
+	notes, encoded, fits := encodeNote(content)
 
 	if len(matches) == 0 {
 		doc := newSecureNote(filename, f.ID, "")
-		if text {
-			doc["notes"] = string(content)
+		if fits {
+			doc["notes"] = notes
+			setNoteEncoding(doc, encoded)
 		}
-		b.log.Debug("creating secure note", "file", filename, "attachment", !text)
+		b.log.Debug("creating secure note", "file", filename, "attachment", !fits)
 		it, err := b.client.createItem(ctx, doc)
 		if err != nil {
 			return err
 		}
-		if !text {
+		if !fits {
 			if err := b.client.createAttachment(ctx, it.ID, path.Base(filename), content); err != nil {
 				// Do not leave an empty note behind: it would resolve as an
 				// empty file on the next pull.
@@ -323,8 +341,8 @@ func (b *Backend) StoreFile(ctx context.Context, project, filename string, conte
 	m := matches[0]
 	switch m.repr {
 	case reprNote:
-		if !text {
-			b.log.Debug("note too large or binary; converting to attachment", "file", filename)
+		if !fits {
+			b.log.Debug("note too large; converting to attachment", "file", filename)
 			if err := b.client.createAttachment(ctx, m.item.ID, path.Base(filename), content); err != nil {
 				return err
 			}
@@ -333,11 +351,12 @@ func (b *Backend) StoreFile(ctx context.Context, project, filename string, conte
 		if err != nil {
 			return err
 		}
-		if text {
-			doc["notes"] = string(content)
+		if fits {
+			doc["notes"] = notes
 		} else {
 			doc["notes"] = nil
 		}
+		setNoteEncoding(doc, fits && encoded)
 		return b.client.editItem(ctx, m.item.ID, doc)
 	default:
 		name := m.attachment.FileName
@@ -364,8 +383,35 @@ func newSecureNote(name, folderID, notes string) map[string]any {
 	}
 }
 
-func fitsInNote(content []byte) bool {
-	return len(content) <= maxNoteSize && utf8.Valid(content) && !bytes.ContainsRune(content, 0)
+// encodeNote keeps text readable and uses Base64 for binary (including NULs).
+// The limit applies to the stored body, including Base64 expansion.
+func encodeNote(content []byte) (notes string, encoded, fits bool) {
+	if len(content) > maxNoteSize {
+		return "", false, false
+	}
+	if utf8.Valid(content) && !bytes.ContainsRune(content, 0) {
+		return string(content), false, true
+	}
+	if base64.StdEncoding.EncodedLen(len(content)) > maxNoteSize {
+		return "", false, false
+	}
+	return base64.StdEncoding.EncodeToString(content), true, true
+}
+
+// setNoteEncoding preserves unrelated custom fields from the raw item document.
+func setNoteEncoding(doc map[string]any, encoded bool) {
+	fields, _ := doc["fields"].([]any)
+	kept := make([]any, 0, len(fields)+1)
+	for _, field := range fields {
+		if f, ok := field.(map[string]any); ok && f["name"] == noteEncodingField {
+			continue
+		}
+		kept = append(kept, field)
+	}
+	if encoded {
+		kept = append(kept, map[string]any{"name": noteEncodingField, "value": "base64", "type": 0})
+	}
+	doc["fields"] = kept
 }
 
 // folder returns the folder named exactly project. Folder search in bw is

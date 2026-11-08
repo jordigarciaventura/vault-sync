@@ -60,7 +60,7 @@ var Tool = toolinstall.Tool{
 
 // ErrPremiumRequired is returned when Bitwarden refuses to store an attachment
 // because the account has no Premium or organization plan.
-var ErrPremiumRequired = fmt.Errorf("attachments require a Bitwarden Premium or organization plan; only UTF-8 text files up to %d bytes can be stored as Secure Notes", maxNoteSize)
+var ErrPremiumRequired = fmt.Errorf("attachments require a Bitwarden Premium or organization plan; Secure Notes support text up to %d bytes or binary files up to %d bytes (Base64-encoded); use a smaller file or upgrade your Bitwarden plan", maxNoteSize, maxNoteSize/4*3)
 
 // execRunner runs the real bw. The executable is located (and installed if
 // missing) on first use, so commands that never reach Bitwarden do not
@@ -259,13 +259,20 @@ type attachment struct {
 	Size     string `json:"size"`
 }
 
+type customField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Type  int    `json:"type"`
+}
+
 type item struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Type        int          `json:"type"`
-	FolderID    string       `json:"folderId"`
-	Notes       *string      `json:"notes"`
-	Attachments []attachment `json:"attachments"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Type        int           `json:"type"`
+	FolderID    string        `json:"folderId"`
+	Notes       *string       `json:"notes"`
+	Attachments []attachment  `json:"attachments"`
+	Fields      []customField `json:"fields"`
 }
 
 func (c *client) listItems(ctx context.Context, folderID string) ([]item, error) {
