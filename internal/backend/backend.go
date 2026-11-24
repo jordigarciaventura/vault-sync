@@ -14,7 +14,9 @@ import (
 )
 
 // Backend is a secrets provider able to store and retrieve files identified by
-// a logical filename inside a project namespace.
+// a logical filename inside a project namespace. Project paths select a provider
+// container followed by an optional slash-separated folder prefix; FileLister
+// returns filenames relative to that prefix.
 type Backend interface {
 	// Name is the human-readable provider name, e.g. "Bitwarden".
 	Name() string

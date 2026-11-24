@@ -182,3 +182,18 @@ func TestDirectoryConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectPaths(t *testing.T) {
+	for _, project := range []string{"vault-sync/example", "vault-sync/team/example"} {
+		cfg, err := Parse([]byte("backend: {type: bitwarden}\nproject: "+project+"\nfiles: [{path: a}]"), t.TempDir(), Options{})
+		if err != nil || cfg.Project != project {
+			t.Fatalf("%q: %v", project, err)
+		}
+	}
+	for _, project := range []string{"root/../child", "root//child", "/root", "root/"} {
+		_, err := Parse([]byte("backend: {type: bitwarden}\nproject: "+project+"\nfiles: [{path: a}]"), t.TempDir(), Options{})
+		if err == nil {
+			t.Errorf("accepted %q", project)
+		}
+	}
+}

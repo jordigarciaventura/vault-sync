@@ -878,3 +878,34 @@ func TestNonInteractiveLoginRequiresCredentials(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestProjectPaths(t *testing.T) {
+	h := newHarness(t, backend.Config{})
+	ctx := context.Background()
+	root := projectSlug
+	for _, namespace := range []string{"example", "example-other", "nested/example"} {
+		if err := h.b.StoreFile(ctx, root+"/"+namespace, "config/a", []byte(namespace)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, namespace := range []string{"example", "example-other", "nested/example"} {
+		project := root + "/" + namespace
+		got, err := read(t, h.b, project, "config/a")
+		if err != nil || got != namespace {
+			t.Fatalf("read: %q %v", got, err)
+		}
+		for _, directory := range []string{"", "config"} {
+			names, err := h.b.ListFiles(ctx, project, directory)
+			if err != nil || !slices.Equal(names, []string{"config/a"}) {
+				t.Fatalf("listing: %v %v", names, err)
+			}
+		}
+		if err := h.b.StoreFile(ctx, project, "config/a", []byte("updated")); err != nil {
+			t.Fatal(err)
+		}
+		got, err = read(t, h.b, project, "config/a")
+		if err != nil || got != "updated" {
+			t.Fatalf("updated read: %q %v", got, err)
+		}
+	}
+}

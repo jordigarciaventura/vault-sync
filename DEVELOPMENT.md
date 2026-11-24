@@ -288,6 +288,12 @@ existing backups. Backups retain the original permissions. Unchanged files
 and dry runs create no backups; other callers of the writer opt in explicitly.
 Unit tests cover repeated pulls, preserved versions and timestamp collisions.
 
+**Project paths.** `backend.SplitProject` validates and splits the container
+from an optional folder prefix. Providers apply it to reads, writes and listings;
+listings strip the prefix before returning logical names. Infisical uses native
+folders; Bitwarden uses prefixed item names within one personal folder. Tests
+cover nested namespaces, sibling isolation and updates using fakes only.
+
 **Directory entries.** The sync service expands local directories on push and
 uses the optional provider-independent `backend.FileLister` interface on pull.
 Both built-in providers implement it. For missing local paths without an explicit

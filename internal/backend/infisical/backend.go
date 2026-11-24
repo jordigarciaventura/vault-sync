@@ -351,6 +351,13 @@ func checkAccount(account string, s session) error {
 
 // ResolveFile implements backend.Backend.
 func (b *Backend) ResolveFile(ctx context.Context, project, filename string) (io.ReadCloser, error) {
+	container, prefix, err := backend.SplitProject(project)
+	if err != nil {
+		return nil, err
+	}
+	if prefix != "" {
+		filename = prefix + "/" + filename
+	}
 	loc, err := locate(filename)
 	if err != nil {
 		return nil, err
@@ -358,7 +365,7 @@ func (b *Backend) ResolveFile(ctx context.Context, project, filename string) (io
 	if err := b.Authenticate(ctx); err != nil {
 		return nil, err
 	}
-	projectID, err := b.projectID(ctx, project)
+	projectID, err := b.projectID(ctx, container)
 	if err != nil {
 		return nil, err
 	}
@@ -403,6 +410,13 @@ func (b *Backend) single(project, filename string, loc location, secrets []secre
 
 // StoreFile implements backend.Backend. Missing folders are created.
 func (b *Backend) StoreFile(ctx context.Context, project, filename string, content []byte) error {
+	container, prefix, err := backend.SplitProject(project)
+	if err != nil {
+		return err
+	}
+	if prefix != "" {
+		filename = prefix + "/" + filename
+	}
 	loc, err := locate(filename)
 	if err != nil {
 		return err
@@ -413,9 +427,9 @@ func (b *Backend) StoreFile(ctx context.Context, project, filename string, conte
 	if err := b.Authenticate(ctx); err != nil {
 		return err
 	}
-	projectID, err := b.projectID(ctx, project)
+	projectID, err := b.projectID(ctx, container)
 	if np := (*noProjectError)(nil); errors.As(err, &np) {
-		projectID, err = b.createProject(ctx, project)
+		projectID, err = b.createProject(ctx, container)
 	}
 	if err != nil {
 		return err
@@ -622,10 +636,17 @@ func looksLikeUUID(s string) bool {
 
 // ListFiles discovers shared secrets recursively without fetching their values.
 func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]string, error) {
+	container, prefix, err := backend.SplitProject(project)
+	if err != nil {
+		return nil, err
+	}
+	if prefix != "" {
+		directory = strings.TrimSuffix(prefix+"/"+directory, "/")
+	}
 	if err := b.Authenticate(ctx); err != nil {
 		return nil, err
 	}
-	id, err := b.projectID(ctx, project)
+	id, err := b.projectID(ctx, container)
 	if err != nil {
 		return nil, err
 	}
@@ -653,7 +674,14 @@ func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]s
 		if s.Path == "" {
 			return nil, errors.New("infisical listing omitted secret paths; update the server")
 		}
-		names = append(names, strings.TrimPrefix(dir+"/"+s.Key, "/"))
+		name := strings.TrimPrefix(dir+"/"+s.Key, "/")
+		if prefix != "" {
+			if !strings.HasPrefix(name, prefix+"/") {
+				continue
+			}
+			name = strings.TrimPrefix(name, prefix+"/")
+		}
+		names = append(names, name)
 	}
 	return names, nil
 }

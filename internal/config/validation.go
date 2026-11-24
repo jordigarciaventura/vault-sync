@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/jordigarciaventura/vault-sync/internal/backend"
 )
 
 // ValidationError aggregates every problem found in a manifest so the user can
@@ -64,7 +66,11 @@ func validate(raw *rawConfig, root string, opts Options) (*Config, error) {
 	case strings.IndexFunc(project, unicode.IsControl) >= 0:
 		add("project: must not contain control characters")
 	default:
-		cfg.Project = project
+		if _, _, err := backend.SplitProject(project); err != nil {
+			add("%s", err)
+		} else {
+			cfg.Project = project
+		}
 	}
 
 	if len(raw.Files) == 0 {

@@ -236,6 +236,14 @@ func checkAccount(account, email string) error {
 
 // ResolveFile implements backend.Backend. Attachments are downloaded lazily.
 func (b *Backend) ResolveFile(ctx context.Context, project, filename string) (io.ReadCloser, error) {
+	container, prefix, err := backend.SplitProject(project)
+	if err != nil {
+		return nil, err
+	}
+	project = container
+	if prefix != "" {
+		filename = prefix + "/" + filename
+	}
 	if err := b.Authenticate(ctx); err != nil {
 		return nil, err
 	}
@@ -307,6 +315,14 @@ func single(project, filename string, items []item) (match, error) {
 // hold small text or Base64-encoded binary data, and attachments otherwise.
 // Existing resources keep their representation unless a note grows too large.
 func (b *Backend) StoreFile(ctx context.Context, project, filename string, content []byte) error {
+	container, prefix, err := backend.SplitProject(project)
+	if err != nil {
+		return err
+	}
+	project = container
+	if prefix != "" {
+		filename = prefix + "/" + filename
+	}
 	if err := b.Authenticate(ctx); err != nil {
 		return err
 	}
@@ -484,6 +500,14 @@ func (b *Backend) listItems(ctx context.Context, folderID string) ([]item, error
 
 // ListFiles discovers notes and attachments using the same rules as ResolveFile.
 func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]string, error) {
+	container, prefix, err := backend.SplitProject(project)
+	if err != nil {
+		return nil, err
+	}
+	project = container
+	if prefix != "" {
+		directory = strings.TrimSuffix(prefix+"/"+directory, "/")
+	}
 	if err := b.Authenticate(ctx); err != nil {
 		return nil, err
 	}
@@ -508,7 +532,7 @@ func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]s
 	var names []string
 	for name := range candidates {
 		if (directory == "" || strings.HasPrefix(name, directory+"/")) && len(resolve(items, name)) > 0 {
-			names = append(names, name)
+			names = append(names, strings.TrimPrefix(name, prefix+"/"))
 		}
 	}
 	return names, nil

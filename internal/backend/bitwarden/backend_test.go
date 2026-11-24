@@ -812,3 +812,35 @@ func TestEnvironmentAuthenticationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectPaths(t *testing.T) {
+	v := newFakeVault()
+	b := newTestBackend(t, v, "")
+	ctx := context.Background()
+	root := "P"
+	for _, namespace := range []string{"example", "example-other", "nested/example"} {
+		if err := b.StoreFile(ctx, root+"/"+namespace, "config/a", []byte(namespace)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, namespace := range []string{"example", "example-other", "nested/example"} {
+		project := root + "/" + namespace
+		got, err := read(t, b, project, "config/a")
+		if err != nil || got != namespace {
+			t.Fatalf("read: %q %v", got, err)
+		}
+		for _, directory := range []string{"", "config"} {
+			names, err := b.ListFiles(ctx, project, directory)
+			if err != nil || !slices.Equal(names, []string{"config/a"}) {
+				t.Fatalf("listing: %v %v", names, err)
+			}
+		}
+		if err := b.StoreFile(ctx, project, "config/a", []byte("updated")); err != nil {
+			t.Fatal(err)
+		}
+		got, err = read(t, b, project, "config/a")
+		if err != nil || got != "updated" {
+			t.Fatalf("updated read: %q %v", got, err)
+		}
+	}
+}

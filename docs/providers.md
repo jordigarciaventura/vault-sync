@@ -40,7 +40,11 @@ self-hosted servers via `bw config server`) are handled by Bitwarden itself.
 `bw` is installed on first use if it is missing (see
 [Provider CLIs](#provider-clis)).
 
-**Storage layout.** `project` is a vault **folder** with that exact name. Each
+**Storage layout.** The first segment of `project` selects a vault **folder**.
+Remaining segments form a virtual folder prefix on item and attachment names:
+`project: vault-sync/example` stores `.env` as `example/.env` in `vault-sync`.
+Bitwarden personal folders do not nest; this adapter uses personal folders,
+not organization collections. Each
 file is stored as one of:
 
 1. a **Secure Note** whose name is the logical name (e.g. `backend/.env`); the
@@ -132,7 +136,7 @@ configured server instead. With `INFISICAL_TOKEN`, the token is checked
 against the configured server (unless `INFISICAL_DOMAIN` is set, which must
 then match).
 
-**Project.** `project` is the Infisical project's id, slug or name, tried in
+**Project.** The first segment of `project` is the Infisical project's id, slug or name, tried in
 that order. A name must match exactly, and if two accessible projects share
 it, vault-sync asks you to use the slug instead. If no accessible project
 matches, `push` creates it (`pull` reports it as not found) with the
@@ -148,7 +152,10 @@ token cannot list projects, so use the slug or id with it.
 
 **Storage layout.** `backend.environment` is one of the project's environments. Each file is a **shared secret**
 whose value is the file content. The directory part of the logical name is the
-Infisical folder and the base name is the secret key:
+Infisical folder and the base name is the secret key. Optional segments after
+the project name prefix that folder: `project: vault-sync/example` stores
+`backend/.env` in `/example/backend` inside project `vault-sync`.
+Without a project prefix, the mapping is:
 
 | Logical name                       | Folder         | Secret key             |
 | ---------------------------------- | -------------- | ---------------------- |

@@ -24,7 +24,7 @@ checks normalized paths, duplicate destinations and Go regular expressions.
 | `backend.account`       | no       | Account the backend must be logged in as (see [providers](providers.md)).       |
 | `backend.environment`   | no       | Provider environment (Infisical only; default `dev`).                       |
 | `backend.server`        | no       | Provider instance URL, e.g. a self-hosted server (Infisical only).          |
-| `project`               | yes      | Project / namespace in the provider (a Bitwarden folder, an Infisical project). |
+| `project`               | yes      | Provider container, optionally followed by `/folder/subfolder` (see below). |
 | `files[].path`          | yes      | Local file or directory **and** logical resource name.                            |
 | `files[].regex`         | no       | Go regular expression filtering paths relative to a directory. |
 | `files[].permissions`   | no       | Octal Unix mode, e.g. `"0600"` (default) or `"0640"`. Quote it.             |
@@ -120,3 +120,21 @@ manifests, and are never printed.
 
 Checks are skipped when `CI` is set and for development builds.
 Notices go to stderr; use `vault-sync self-upgrade` to install an update.
+
+### Project paths
+
+Use `project: vault-sync/example` to share one provider container across
+repositories. The first segment selects the Bitwarden folder or Infisical
+project; the remaining segments prefix all remote filenames. For example,
+`config/.env` lives at `example/config/.env` inside `vault-sync`. Pull and
+directory discovery return names relative to `example`.
+
+Paths must be relative, separated by `/`, with no empty, `.` or `..` segments,
+backslashes, control characters or whitespace around segments. Plain project
+names keep their existing layout. Infisical folder segments additionally allow
+only letters, digits, `-` and `_`.
+
+Changing `project` selects a different remote location; it does not move existing
+secrets. Existing Bitwarden folders named literally `vault-sync/example` must
+be moved manually to the `vault-sync` folder with `example/` prefixed to item
+names before using this layout. A bulk migration command is not yet available.
