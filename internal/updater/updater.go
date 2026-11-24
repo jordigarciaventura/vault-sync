@@ -1,8 +1,7 @@
 // Package updater checks GitHub Releases for newer vault-sync versions and
 // implements self-upgrade.
 //
-// The check never blocks commands: notifications are rendered from a local
-// cache, and an expired cache is refreshed by a detached background process.
+// Checks use a local cache; refreshing an expired cache is bounded by Timeout.
 // Only the repository name and a generic User-Agent are sent to GitHub.
 package updater
 
@@ -30,7 +29,7 @@ const (
 )
 
 // DefaultTTL is how long a check result stays valid.
-const DefaultTTL = 12 * time.Hour
+const DefaultTTL = 10 * time.Minute
 
 // Timeout bounds every network request made by the update check.
 const Timeout = 3 * time.Second
@@ -184,7 +183,7 @@ Installed: %s
 Latest:    %s
 
 Update with:
-brew upgrade vault-sync
+vault-sync self-upgrade
 `, Normalize(current), Normalize(latest))
 }
 

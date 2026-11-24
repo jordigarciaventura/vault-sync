@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // DirPermissions is used for directories created by vault-sync.
@@ -39,8 +40,10 @@ func (s Status) String() string {
 	}
 }
 
-// Options control path confinement.
+// Options control path confinement and backups.
 type Options struct {
+	// Backup preserves changed destinations beside the new file.
+	Backup bool
 	// ConfineTo, when set, requires the destination's real (symlink-resolved)
 	// parent directory to be inside this directory.
 	ConfineTo string
@@ -128,11 +131,41 @@ func WriteFile(dest string, data []byte, perm fs.FileMode, opts Options) (status
 	if err = tmp.Close(); err != nil {
 		return 0, fmt.Errorf("close temporary file: %w", err)
 	}
+	var backup string
+	if status == Updated && opts.Backup {
+		backup, err = backupFile(dest, time.Now())
+		if err != nil {
+			return 0, err
+		}
+	}
 	if err = os.Rename(tmpName, dest); err != nil {
+		if backup != "" {
+			_ = os.Remove(backup)
+		}
 		return 0, fmt.Errorf("rename into place: %w", err)
 	}
 	syncDir(dir)
 	return status, nil
+}
+
+// Linking the original before replacing it moves its inode to the backup name
+// without leaving a gap at dest. Link also refuses to overwrite any existing
+// backup (including symlinks); retry with a suffix if timestamps collide.
+func backupFile(dest string, now time.Time) (string, error) {
+	base := dest + "." + now.UTC().Format("20060102T150405.000000000Z") + ".bak"
+	for n := 0; ; n++ {
+		name := base
+		if n > 0 {
+			name = fmt.Sprintf("%s.%d", base, n)
+		}
+		if err := os.Link(dest, name); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				continue
+			}
+			return "", fmt.Errorf("back up existing file: %w", err)
+		}
+		return name, nil
+	}
 }
 
 func checkRegular(dest string, info fs.FileInfo) error {

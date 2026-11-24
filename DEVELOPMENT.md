@@ -30,6 +30,8 @@ task hooks        # once: install git hooks (.githooks)
 task build        # bin/vault-sync
 task run -- ARGS  # build, then run bin/vault-sync ARGS in the current directory
 task install      # go install into $GOBIN (run it as `vault-sync` anywhere)
+task install-dev  # build the checkout into ~/.local/bin/vault-sync-dev
+task uninstall-dev # remove only ~/.local/bin/vault-sync-dev
 task test         # unit tests with -race
 task lint         # golangci-lint
 task fmt          # gofmt + goimports
@@ -47,6 +49,30 @@ Before sending a change, run `go vet ./... && task test && task lint`.
 
 ## Running the development version
 
+To run your checkout from anywhere alongside a Homebrew installation:
+
+```bash
+task install-dev
+# Add this to ~/.zshrc (or your shell's startup file) if needed:
+export PATH="$HOME/.local/bin:$PATH"
+
+cd /path/to/another/project
+vault-sync-dev version -v
+vault-sync-dev validate
+```
+
+`task install-dev` builds the current checkout, including uncommitted changes,
+with the same version metadata as `task build`. Run it again after source
+changes to refresh the installed binary. The separate name leaves Homebrew's
+`vault-sync` available as usual. Both commands use the same provider sessions
+and configuration; the name does not isolate vault data.
+
+Remove it with `task uninstall-dev` from this repository. Neither task changes
+the Homebrew installation. Override the destination with
+`task install-dev DEV_INSTALL_DIR=/absolute/path/to/bin`; pass the same
+`DEV_INSTALL_DIR` to `task uninstall-dev`. Uninstall removes only
+`vault-sync-dev`, and is safe to repeat.
+
 Anything after `--` is passed to the binary. `task run` executes in the
 directory you call it from, so `secrets.yaml` is found there (or in a parent),
 exactly as with an installed binary:
@@ -54,6 +80,7 @@ exactly as with an installed binary:
 ```bash
 task run -- version -v               # git describe output (v0.1.0-3-gabc123-dirty), or v<VERSION>-dev without tags
 task run -- help
+task run -- validate --config secrets.yaml
 task run -- pull --dry-run --verbose
 ```
 
@@ -88,9 +115,31 @@ Notes:
   users. Make sure `which -a bw` lists only one Bitwarden CLI; otherwise set
   `VAULT_SYNC_BW_PATH=/opt/homebrew/bin/bw`.
 - If you also have the Homebrew release installed, `vault-sync` on `PATH` is
-  that one, not your checkout; use `task run`/`bin/vault-sync`, or
-  `task install` and check `which vault-sync`.
-- Update checks are skipped for `dev` builds (no tag yet).
+  that one, not your checkout; use `vault-sync-dev`, `task run` or
+  `bin/vault-sync`. `task install` uses the release name; check
+  `which vault-sync` if you use it.
+- Update checks are skipped for `dev` builds (no tag yet). Release builds check
+  on every invocation, including help, version and failed commands, using a
+  10-minute cache. Expired results refresh concurrently with command execution;
+  the invocation waits for the bounded request (3 seconds) before printing any
+  upgrade notice to stderr, including redirected stderr. Failures are silent.
+
+## Agent workflows
+
+`init --non-interactive` takes `--backend`, `--project`, repeated `--file`,
+and optional `--config`/`--force`, validates before writing, and never reads
+stdin. `validate` loads the manifest and constructs/closes the backend to check
+provider settings; lazy constructors must not install CLIs or authenticate.
+`backend.Config.NonInteractive` disables terminal authentication in both providers
+and is passed by login/pull/push. Environment credentials remain available:
+Bitwarden API keys (`BW_CLIENTID`/`BW_CLIENTSECRET`), `BW_PASSWORD` for unlocking,
+`BW_SESSION`, and Infisical's existing `INFISICAL_TOKEN` support. Bitwarden
+credential-command errors omit provider output; credentials must never appear
+in process arguments. Login does not persist Bitwarden session keys.
+
+Unit tests cover validation, prompt-free manifest creation and overwrite rules,
+flag propagation, environment authentication and credential errors, and dry-run
+preservation of local and remote data. Keep these tests fake-only.
 
 ## Tests
 
@@ -193,7 +242,7 @@ internal/backend/infisical/  Infisical adapter: CLI for auth, REST API for secre
 internal/toolinstall/        finds provider CLIs; installs them on first use (brew or verified GitHub download)
 internal/sync/               pull/push orchestration and recursive directory expansion
 internal/filesystem/         atomic, symlink-safe writes
-internal/updater/            GitHub release check (cached, non-blocking) + self-upgrade
+internal/updater/            GitHub release check (cached, timeout-bounded) + self-upgrade
 internal/version/            ldflags-injected build metadata
 tools/docgen/                regenerates the README command reference
 test/e2e/                    end-to-end tests of the binary against real accounts (e2e build tag)
@@ -224,9 +273,26 @@ representations (notes and attachments) with the user's existing login. A
 `bws`-based backend can be added later as a separate backend type without
 changing manifests' `files` or `project`.
 
+**CLI output.** `internal/cli/output.go` styles terminal output without extra
+dependencies. Color detection checks each output stream and respects `NO_COLOR`
+and `TERM=dumb`; redirected output stays plain. Sync results retain textual
+statuses, with `-` for unchanged files and dry runs. Update notices use the same
+stream-aware styling and recommend `vault-sync self-upgrade` for all installations.
+
+**Pull backups.** Pull enables backups in `filesystem.WriteFile`. After staging
+and flushing the replacement, the writer links the original inode to a UTC
+timestamped `.bak` name, then atomically renames the replacement over the
+destination. Exclusive link creation and numeric collision suffixes protect
+existing backups. Backups retain the original permissions. Unchanged files
+and dry runs create no backups; other callers of the writer opt in explicitly.
+Unit tests cover repeated pulls, preserved versions and timestamp collisions.
+
 **Directory entries.** The sync service expands local directories on push and
 uses the optional provider-independent `backend.FileLister` interface on pull.
-Both built-in providers implement it. Discovery returns logical names only;
+Both built-in providers implement it. For missing local paths without an explicit
+directory declaration, pull tries remote directory discovery before single-file
+resolution. Empty listings or not-found errors fall back to a file; other
+discovery errors are reported. Discovery returns logical names only;
 normal file resolution still detects ambiguous resources. Regexes match paths
 relative to each directory. Expansion rejects unsafe remote names, skips local
 symlinks, and reports empty selections and overlapping entries as errors.

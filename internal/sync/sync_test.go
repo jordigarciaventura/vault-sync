@@ -303,3 +303,114 @@ func TestDirectoryOverlap(t *testing.T) {
 		t.Fatalf("%v %v", results, err)
 	}
 }
+
+func TestPullDetectsMissingDirectory(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprint(dryRun), func(t *testing.T) {
+			root := t.TempDir()
+			cfg := testConfig(t, root, "services/worker/credentials")
+			m := &mockBackend{files: map[string]string{
+				"services/worker/credentials/token.txt":          "token",
+				"services/worker/credentials/nested/signing.txt": "signing",
+				"services/worker/credentials-other/ignored.txt":  "ignored",
+			}}
+			results, err := (&Service{Backend: m}).Pull(context.Background(), cfg, Options{DryRun: dryRun})
+			if err != nil || len(results) != 2 {
+				t.Fatalf("results=%+v err=%v", results, err)
+			}
+			for _, r := range results {
+				if r.Action != ActionCreated || r.DryRun != dryRun {
+					t.Fatalf("unexpected result: %+v", r)
+				}
+				data, err := os.ReadFile(r.File.Destination)
+				if dryRun {
+					if !os.IsNotExist(err) {
+						t.Fatalf("dry run wrote file: %v", err)
+					}
+				} else if err != nil || string(data) != m.files[r.File.Name] {
+					t.Fatalf("incorrect restored file %s: %v", r.File.Name, err)
+				}
+			}
+		})
+	}
+}
+
+func TestPullMissingPathFallsBackToFile(t *testing.T) {
+	for _, exists := range []bool{false, true} {
+		t.Run(fmt.Sprint(exists), func(t *testing.T) {
+			root := t.TempDir()
+			m := &mockBackend{files: map[string]string{"services/worker/credentials-other/token.txt": "ignored"}}
+			if exists {
+				m.files["services/worker/credentials"] = "single file"
+			}
+			results, err := (&Service{Backend: m}).Pull(context.Background(), testConfig(t, root, "services/worker/credentials"), Options{})
+			if len(results) != 1 {
+				t.Fatalf("results=%+v", results)
+			}
+			if !exists {
+				if !errors.Is(err, ErrSomeFilesFailed) || !errors.Is(results[0].Err, backend.ErrNotFound) {
+					t.Fatalf("results=%+v err=%v", results, err)
+				}
+				return
+			}
+			data, readErr := os.ReadFile(results[0].File.Destination)
+			if err != nil || readErr != nil || string(data) != "single file" {
+				t.Fatalf("pull=%v read=%v", err, readErr)
+			}
+		})
+	}
+}
+
+func TestPullBacksUpChangedFiles(t *testing.T) {
+	root := t.TempDir()
+	dest := filepath.Join(root, "file")
+	if err := os.WriteFile(dest, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &mockBackend{files: map[string]string{"file": "remote"}}
+	service := &Service{Backend: m}
+	cfg := testConfig(t, root, "file")
+	for _, step := range []struct {
+		content string
+		dry     bool
+		action  Action
+		backups int
+	}{
+		{"remote", true, ActionUpdated, 0},
+		{"original", false, ActionUnchanged, 0},
+		{"remote", false, ActionUpdated, 1},
+		{"remote", false, ActionUnchanged, 1},
+		{"latest", false, ActionUpdated, 2},
+	} {
+		m.files["file"] = step.content
+		results, err := service.Pull(context.Background(), cfg, Options{DryRun: step.dry})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].Action != step.action {
+			t.Fatalf("action = %s, want %s", results[0].Action, step.action)
+		}
+		backups, err := filepath.Glob(dest + ".*.bak*")
+		if err != nil || len(backups) != step.backups {
+			t.Fatalf("backups = %v, error = %v", backups, err)
+		}
+		if !step.dry {
+			data, err := os.ReadFile(dest)
+			if err != nil || string(data) != step.content {
+				t.Fatal("destination content mismatch")
+			}
+		}
+	}
+	backups, _ := filepath.Glob(dest + ".*.bak*")
+	contents := map[string]bool{}
+	for _, backup := range backups {
+		data, err := os.ReadFile(backup)
+		if err != nil {
+			t.Fatal(err)
+		}
+		contents[string(data)] = true
+	}
+	if !contents["original"] || !contents["remote"] {
+		t.Fatal("previous versions were not preserved")
+	}
+}

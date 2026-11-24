@@ -73,7 +73,7 @@ func newWithRunner(cfg backend.Config, r runner) *Backend {
 		client:      &client{run: r, session: os.Getenv(sessionEnv)},
 		account:     cfg.Account,
 		log:         log.With("backend", Type),
-		interactive: func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
+		interactive: func() bool { return !cfg.NonInteractive && term.IsTerminal(int(os.Stdin.Fd())) },
 		folders:     map[string]folder{},
 		items:       map[string][]item{},
 	}
@@ -118,11 +118,13 @@ func (b *Backend) Authenticate(ctx context.Context) error {
 			return fmt.Errorf("%w: the Bitwarden session in %s is invalid or expired; run `export %s=$(bw unlock --raw)` or unset it to unlock interactively",
 				backend.ErrAuthentication, sessionEnv, sessionEnv)
 		}
-		if !b.interactive() {
-			return fmt.Errorf("%w: the Bitwarden vault is locked; run `export %s=$(bw unlock --raw)` first",
+		if os.Getenv("BW_PASSWORD") == "" && !b.interactive() {
+			return fmt.Errorf("%w: the Bitwarden vault is locked; set BW_PASSWORD or run `export %s=$(bw unlock --raw)` first",
 				backend.ErrAuthentication, sessionEnv)
 		}
-		fmt.Fprintln(os.Stderr, "Bitwarden vault is locked.")
+		if os.Getenv("BW_PASSWORD") == "" {
+			fmt.Fprintln(os.Stderr, "Bitwarden vault is locked.")
+		}
 		key, err := b.client.unlock(ctx)
 		if err != nil {
 			return fmt.Errorf("%w: %w", backend.ErrAuthentication, err)
@@ -139,11 +141,22 @@ func (b *Backend) Authenticate(ctx context.Context) error {
 	return nil
 }
 
-// login runs an interactive `bw login` and keeps the resulting session key in
-// memory. The configured account is pre-filled when it is a full email.
+// login uses environment API keys when supplied, otherwise an allowed terminal.
+// Interactive session keys stay in memory; API key sessions are unlocked later.
 func (b *Backend) login(ctx context.Context) error {
+	id, secret := os.Getenv("BW_CLIENTID"), os.Getenv("BW_CLIENTSECRET")
+	if id != "" || secret != "" {
+		if id == "" || secret == "" {
+			return fmt.Errorf("%w: set both BW_CLIENTID and BW_CLIENTSECRET", backend.ErrAuthentication)
+		}
+		if _, err := b.client.run.Run(ctx, nil, nil, "login", "--apikey"); err != nil {
+			return fmt.Errorf("%w: bw API key login failed; check BW_CLIENTID and BW_CLIENTSECRET", backend.ErrAuthentication)
+		}
+		return nil
+	}
+
 	if !b.interactive() {
-		return fmt.Errorf("%w: not logged in to Bitwarden; run `vault-sync login` or `bw login` in a terminal%s",
+		return fmt.Errorf("%w: not logged in to Bitwarden; set BW_CLIENTID and BW_CLIENTSECRET for API key login, or run `vault-sync login` or `bw login` in a terminal%s",
 			backend.ErrAuthentication, accountHint(b.account))
 	}
 	fmt.Fprintf(os.Stderr, "Not logged in to Bitwarden%s.\n", accountHint(b.account))

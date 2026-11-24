@@ -3,6 +3,7 @@ version: "3"
 
 vars:
   BINARY: vault-sync
+  DEV_INSTALL_DIR: "{{.HOME}}/.local/bin"
   PKG: github.com/jordigarciaventura/vault-sync
   # Released version (source of truth; change it with `task bump`).
   RELEASE_VERSION:
@@ -36,6 +37,17 @@ tasks:
     desc: Install into $GOBIN
     cmds:
       - go install -trimpath -ldflags "{{.LDFLAGS}}" ./cmd/vault-sync
+
+  install-dev:
+    desc: Install the checkout as vault-sync-dev (default ~/.local/bin)
+    cmds:
+      - mkdir -p "{{.DEV_INSTALL_DIR}}"
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o "{{.DEV_INSTALL_DIR}}/vault-sync-dev" ./cmd/vault-sync
+
+  uninstall-dev:
+    desc: Remove vault-sync-dev (leaves vault-sync untouched)
+    cmds:
+      - rm -f "{{.DEV_INSTALL_DIR}}/vault-sync-dev"
 
   test:
     desc: Run unit tests with the race detector

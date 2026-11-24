@@ -184,7 +184,16 @@ func (c *client) status(ctx context.Context) (status, error) {
 }
 
 func (c *client) unlock(ctx context.Context) (string, error) {
-	out, err := c.run.RunInteractive(ctx, nil, "unlock", "--raw")
+	var out []byte
+	var err error
+	if os.Getenv("BW_PASSWORD") != "" {
+		out, err = c.run.Run(ctx, nil, nil, "unlock", "--passwordenv", "BW_PASSWORD", "--raw")
+		if err != nil {
+			return "", errors.New("bw unlock failed; check BW_PASSWORD")
+		}
+	} else {
+		out, err = c.run.RunInteractive(ctx, nil, "unlock", "--raw")
+	}
 	if err != nil {
 		return "", err
 	}

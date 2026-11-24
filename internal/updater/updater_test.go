@@ -41,7 +41,7 @@ func TestNewer(t *testing.T) {
 
 func TestNotice(t *testing.T) {
 	n := Notice("1.2.0", "v1.3.0")
-	for _, want := range []string{"Installed: v1.2.0", "Latest:    v1.3.0", "brew upgrade vault-sync"} {
+	for _, want := range []string{"Installed: v1.2.0", "Latest:    v1.3.0", "vault-sync self-upgrade"} {
 		if !strings.Contains(n, want) {
 			t.Errorf("notice missing %q:\n%s", want, n)
 		}
@@ -135,6 +135,13 @@ func TestEnabled(t *testing.T) {
 	t.Setenv(DisableEnv, "1")
 	if Enabled("v1.0.0") {
 		t.Error("env var should disable")
+	}
+}
+
+func TestDefaultTTL(t *testing.T) {
+	t.Setenv(TTLEnv, "")
+	if got := NewChecker("v1.0.0").TTL; got != 10*time.Minute {
+		t.Fatalf("default TTL = %v, want 10m", got)
 	}
 }
 

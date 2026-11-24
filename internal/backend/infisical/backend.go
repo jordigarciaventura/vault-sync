@@ -111,7 +111,7 @@ func newWithRunner(cfg backend.Config, r runner) *Backend {
 		env:         env,
 		server:      server,
 		log:         log.With("backend", Type),
-		interactive: func() bool { return term.IsTerminal(int(os.Stdin.Fd())) },
+		interactive: func() bool { return !cfg.NonInteractive && term.IsTerminal(int(os.Stdin.Fd())) },
 		getenv:      os.Getenv,
 		newAPI:      newAPI,
 		projectIDs:  map[string]string{},
@@ -639,6 +639,9 @@ func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]s
 		Secrets []secret `json:"secrets"`
 	}
 	if err := b.api.do(ctx, http.MethodGet, "/v4/secrets", q, nil, &out); err != nil {
+		if isStatus(err, http.StatusNotFound) {
+			return nil, backend.NotFoundError(project, directory, "directory not found in Infisical; check the path and environment")
+		}
 		return nil, err
 	}
 	var names []string

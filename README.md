@@ -32,7 +32,7 @@ brew tap jordigarciaventura/tap
 brew install vault-sync
 ```
 
-Use `brew upgrade vault-sync` (or `vault-sync self-upgrade`) to upgrade it.
+Use `vault-sync self-upgrade` to upgrade any installation.
 
 Prebuilt binaries for macOS and Linux (amd64/arm64) are attached to every
 [GitHub Release](https://github.com/jordigarciaventura/vault-sync/releases).
@@ -104,17 +104,29 @@ vault-sync
 Project: Example
 Backend: Bitwarden
 
-✓ /shared/keys/firmware-signing.key (unchanged)
+- /shared/keys/firmware-signing.key (unchanged)
 ✓ backend/.env (updated)
 ✓ backend/.env.production (created)
 
 Successfully synchronized 3 files.
 ```
 
+Terminal output uses green for created or pushed files, yellow for updates,
+muted gray with `-` for unchanged files, cyan for dry runs, and red for failures.
+Status text remains visible without color. Colors are disabled when output is
+redirected, `TERM=dumb`, or `NO_COLOR` is non-empty.
+
 `pull` writes every file atomically (temporary file in the same directory →
 permissions → fsync → rename), creates missing directories with `0700`,
 reports whether each file was created, updated or unchanged, and never deletes
-files. If one file fails, the others are still processed and the command exits
+files. Before replacing a file whose contents differ, it preserves the original
+beside it as `<filename>.<UTC timestamp>.bak` (for example,
+`.env.20261124T120000.123456789Z.bak`), retaining its permissions. Name
+collisions get a numeric suffix so previous backups are never overwritten.
+Unchanged files create no backup. Backups contain secrets too; keep them out
+of version control and remove them when no longer needed. If a backup cannot
+be created, the original file is left untouched and that file fails.
+If one file fails, the others are still processed and the command exits
 with status `1`. `--dry-run` checks that every remote resource exists and
 reports what would be written, without downloading attachments or touching the
 filesystem.
@@ -165,9 +177,11 @@ listing every problem at once.
 
 **Directories and filters.** A directory entry synchronizes regular files
 recursively, preserving their relative paths and applying the entry's permissions
-to every file. Existing local directories are recognized automatically. Use a
-trailing slash (such as `config/`) to declare a directory even when it does not
-exist locally yet. `.` selects the manifest directory. Adding `regex` also
+to every file. Existing local directories are recognized automatically. On pull,
+a missing local path is first checked for remote files beneath it; if none
+exist, it is resolved as a single file. If both a remote directory and a file
+share that path, the directory takes precedence. Use a trailing slash (such as
+`config/`) to require a directory, including when it does not exist locally yet. `.` selects the manifest directory. Adding `regex` also
 declares a directory; omit it to include all files.
 
 ```yaml
@@ -191,6 +205,43 @@ When `--config` is not given, `vault-sync` looks for `secrets.yaml` in the
 current directory and then in its parents, so it also works from
 subdirectories.
 
+### Automation and agents
+
+Create and validate a manifest without prompts:
+
+```bash
+vault-sync init --non-interactive --backend bitwarden --project Example \
+  --file backend/.env --file config/ --config secrets.yaml
+vault-sync validate --config secrets.yaml
+vault-sync pull --dry-run --non-interactive
+vault-sync push --dry-run --non-interactive
+```
+
+`init --non-interactive` requires `--backend`, `--project` and at least one
+`--file` (repeat for multiple paths). Existing manifests require `--force`.
+`validate` checks parsing, paths and backend settings locally without installing
+provider CLIs, logging in or checking remote resources. It exits with status
+`1` for invalid configuration. It finds the manifest in parent directories,
+just like pull and push.
+
+`login`, `pull` and `push` accept `--non-interactive` to forbid authentication
+prompts even in a terminal. Existing sessions and environment credentials work;
+missing credentials fail with an actionable error. Dry runs still authenticate
+and perform discovery, so they may install a missing provider CLI and update
+its authentication or local cache, but do not write destination files, create
+backups, or upload secrets. Pull previews report existing files as potential
+overwrites without comparing their contents.
+
+For Bitwarden, supply `BW_CLIENTID` and `BW_CLIENTSECRET` for API key login,
+and `BW_PASSWORD` for unlocking on each pull/push invocation; an existing
+`BW_SESSION` also works. `login` establishes the account login but keeps any
+session key in memory only, so it cannot export a session to later commands.
+These use the provider's [documented API key and password environment options](https://bitwarden.com/help/cli/).
+For Infisical, supply `INFISICAL_TOKEN` and optionally `INFISICAL_DOMAIN`;
+`login --non-interactive` checks the existing token or user session.
+Credentials stay in environment variables rather than command arguments or
+manifests, and are never printed.
+
 ## Commands
 
 <!-- BEGIN GENERATED COMMANDS (task docs) -->
@@ -198,12 +249,13 @@ subdirectories.
 | Command | Description |
 | ------- | ----------- |
 | `vault-sync help` | Help about any command. |
-| [`vault-sync init`](#vault-sync-init) | Create a secrets.yaml interactively. |
+| [`vault-sync init`](#vault-sync-init) | Create a secrets.yaml interactively or from flags. |
 | [`vault-sync login`](#vault-sync-login) | Log in to the backend, or show who is logged in. |
 | [`vault-sync logout`](#vault-sync-logout) | Log out of the backend. |
 | [`vault-sync pull`](#vault-sync-pull) | Download all configured files from the backend. |
 | [`vault-sync push`](#vault-sync-push) | Upload all configured files to the backend. |
 | [`vault-sync self-upgrade`](#vault-sync-self-upgrade) | Upgrade vault-sync to the latest stable release. |
+| [`vault-sync validate`](#vault-sync-validate) | Validate the configuration without contacting a backend. |
 | [`vault-sync version`](#vault-sync-version) | Print the installed version. |
 
 Every command accepts `-h, --help`; `vault-sync help <command>` shows the
@@ -234,6 +286,9 @@ vault-sync [command] [flags]
 Create a manifest by answering a few questions: the file name, the backend,
 the project name in the provider and the files to synchronize.
 
+Use --non-interactive with --backend, --project and repeated --file flags
+to create a manifest without prompts. --config selects the output path.
+
 The manifest is validated before it is written. An existing file is only
 replaced after confirmation (or with --force). Optional backend settings
 (account, environment, server) can be added to the file afterwards.
@@ -244,12 +299,21 @@ vault-sync init [flags]
 
 | Flag | Description |
 | ---- | ----------- |
+| `-b, --backend string` | Backend to use (required with --non-interactive). |
+| `-c, --config string` | Path of the manifest to create. Default: `secrets.yaml`. |
+| `--file stringArray` | File or directory to synchronize; repeat for each entry (required with --non-interactive). Default: `[]`. |
 | `-f, --force` | Overwrite an existing manifest without asking. |
+| `--non-interactive` | Create a manifest from flags without prompting. |
+| `--project string` | Project name (required with --non-interactive). |
 
 ### `vault-sync login`
 
 Log in to the backend interactively. If you are already logged in, show the
 current account instead.
+
+Use --non-interactive to forbid prompts. Bitwarden accepts BW_CLIENTID and
+BW_CLIENTSECRET for API key login; pull/push also accept BW_PASSWORD to unlock.
+Infisical accepts INFISICAL_TOKEN. Existing provider sessions are reused.
 
 The backend, expected account and server are taken from secrets.yaml when
 one is found; otherwise pass --backend. A session to another server than the
@@ -264,6 +328,7 @@ vault-sync login [flags]
 | ---- | ----------- |
 | `-b, --backend string` | Backend to use when no secrets.yaml is found (bitwarden, infisical). |
 | `-c, --config string` | Path to the manifest (default: ./secrets.yaml, searched upwards; optional). |
+| `--non-interactive` | Use existing sessions or environment credentials without prompting. |
 | `-v, --verbose` | Print diagnostic details (never secret values). |
 
 ### `vault-sync logout`
@@ -296,6 +361,7 @@ vault-sync pull [flags]
 | ---- | ----------- |
 | `-c, --config string` | Path to the manifest (default: ./secrets.yaml, searched upwards). |
 | `-n, --dry-run` | Show planned operations without changing anything. |
+| `--non-interactive` | Use existing sessions or environment credentials without prompting. |
 | `-v, --verbose` | Print diagnostic details (never secret values). |
 
 ### `vault-sync push`
@@ -311,6 +377,7 @@ vault-sync push [flags]
 | ---- | ----------- |
 | `-c, --config string` | Path to the manifest (default: ./secrets.yaml, searched upwards). |
 | `-n, --dry-run` | Show planned operations without changing anything. |
+| `--non-interactive` | Use existing sessions or environment credentials without prompting. |
 | `-v, --verbose` | Print diagnostic details (never secret values). |
 
 ### `vault-sync self-upgrade`
@@ -323,6 +390,19 @@ are replaced in place after verifying the published SHA-256 checksum.
 ```text
 vault-sync self-upgrade
 ```
+
+### `vault-sync validate`
+
+Validate the manifest using the same parsing and validation rules as pull and push.
+No provider CLI, authentication or remote access is required.
+
+```text
+vault-sync validate [flags]
+```
+
+| Flag | Description |
+| ---- | ----------- |
+| `-c, --config string` | Path to the manifest (default: ./secrets.yaml, searched upwards). |
 
 ### `vault-sync version`
 
@@ -383,11 +463,11 @@ item created for that failed upload.
 
 **Authentication.** `vault-sync` reads `bw status`:
 
-- *unauthenticated* → runs `bw login` interactively (pre-filling the email when
-  `backend.account` is a full address); in scripts/CI it fails and asks you to
-  log in first;
-- *locked* → prompts for your master password through `bw unlock` when running
-  in a terminal; in scripts/CI export `BW_SESSION=$(bw unlock --raw)` first;
+- *unauthenticated* → uses API key login when `BW_CLIENTID` and
+  `BW_CLIENTSECRET` are set; otherwise runs `bw login` interactively
+  (pre-filling a full `backend.account` email) or fails when prompts are unavailable;
+- *locked* → unlocks using `BW_PASSWORD` when set, otherwise prompts through
+  `bw unlock` in a terminal; scripts can also export `BW_SESSION=$(bw unlock --raw)`;
 - the session key is kept in memory only and never written to disk.
 
 The vault is synced (`bw sync`) before reading so recent changes are visible.
@@ -401,6 +481,8 @@ read.
 | Variable              | Purpose                                                     |
 | --------------------- | ----------------------------------------------------------- |
 | `BW_SESSION`          | Existing session key to use instead of prompting            |
+| `BW_CLIENTID` / `BW_CLIENTSECRET` | Personal API key credentials for non-interactive login |
+| `BW_PASSWORD` | Master password for non-interactive unlocking (never passed as an argument) |
 | `VAULT_SYNC_BW_PATH`  | Path to the `bw` executable to use (skips lookup and install) |
 
 ## Infisical backend
@@ -505,23 +587,28 @@ Installed: v1.2.0
 Latest:    v1.3.0
 
 Update with:
-brew upgrade vault-sync
+vault-sync self-upgrade
 ```
+
+The notice highlights the headline in bold yellow and the upgrade command in
+cyan on terminals, respecting `NO_COLOR` and `TERM=dumb`. Redirected notices
+remain plain text.
 
 The notice is rendered from a local cache (`~/Library/Caches/vault-sync/` on
 macOS, `$XDG_CACHE_HOME/vault-sync/` on Linux). When the cache is older than
-the TTL, a detached background process refreshes it from the GitHub Releases
-API with a 3 s timeout, so commands never wait on the network and offline
-machines are unaffected. Only the repository name is sent; nothing about your
+the TTL (10 minutes by default), the current invocation refreshes it from the
+GitHub Releases API while the command runs and waits for the result before
+exiting, so a newly discovered upgrade is shown immediately. Requests have a
+3 s timeout; failures are silent and previously cached notices remain available. Only the repository name is sent; nothing about your
 project or secrets.
 
 | Variable                        | Default | Purpose                              |
 | ------------------------------- | ------- | ------------------------------------ |
-| `VAULT_SYNC_UPDATE_CHECK_TTL`   | `12h`   | Cache lifetime (Go duration)         |
+| `VAULT_SYNC_UPDATE_CHECK_TTL`   | `10m`   | Cache lifetime (Go duration)         |
 | `VAULT_SYNC_NO_UPDATE_CHECK`    | unset   | Set to `1` to disable checks         |
 
-Checks are also skipped when `CI` is set, for development builds, and the
-notice is only shown when stderr is a terminal. `vault-sync` never updates
+Checks are skipped when `CI` is set and for development builds. Notices are
+written to stderr even when output is redirected. `vault-sync` never updates
 itself unless you run `self-upgrade`, which uses `brew upgrade` for Homebrew
 installs and otherwise downloads the release archive and verifies its SHA-256
 checksum before replacing the binary.
@@ -538,6 +625,13 @@ checksum before replacing the binary.
 - No commands from the manifest are ever executed.
 
 ## Development
+
+To install your checkout alongside Homebrew, run `task install-dev` in this
+repository and add `~/.local/bin` to your `PATH`. Run `vault-sync-dev` from
+any project; re-run `task install-dev` after source changes. Remove it with
+`task uninstall-dev`, which leaves Homebrew's `vault-sync` untouched. See
+[Running the development version](DEVELOPMENT.md#running-the-development-version)
+for details and a custom install directory.
 
 Building from source, running tests, the architecture and the release process
 are described in [DEVELOPMENT.md](DEVELOPMENT.md).

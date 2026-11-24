@@ -122,7 +122,7 @@ func (s *Service) each(ctx context.Context, cfg *config.Config, opts Options, pu
 
 func (s *Service) pullOne(ctx context.Context, cfg *config.Config, f config.File, dryRun bool) (Action, error) {
 	log := s.logger().With("file", f.Name)
-	fsOpts := filesystem.Options{}
+	fsOpts := filesystem.Options{Backup: true}
 	if !f.Absolute {
 		fsOpts.ConfineTo = cfg.Root
 	}

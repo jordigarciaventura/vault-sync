@@ -13,9 +13,10 @@ import (
 )
 
 type accountFlags struct {
-	config  string
-	backend string
-	verbose bool
+	config         string
+	backend        string
+	verbose        bool
+	nonInteractive bool
 }
 
 func (f *accountFlags) register(cmd *cobra.Command, types []string) {
@@ -31,6 +32,10 @@ func newLoginCommand(a *app) *cobra.Command {
 		Short: "Log in to the backend, or show who is logged in",
 		Long: `Log in to the backend interactively. If you are already logged in, show the
 current account instead.
+
+Use --non-interactive to forbid prompts. Bitwarden accepts BW_CLIENTID and
+BW_CLIENTSECRET for API key login; pull/push also accept BW_PASSWORD to unlock.
+Infisical accepts INFISICAL_TOKEN. Existing provider sessions are reused.
 
 The backend, expected account and server are taken from secrets.yaml when
 one is found; otherwise pass --backend. A session to another server than the
@@ -69,6 +74,7 @@ automatically when needed, so running this first is optional.`,
 		},
 	}
 	flags.register(cmd, a.registry.Types())
+	cmd.Flags().BoolVar(&flags.nonInteractive, "non-interactive", false, "use existing sessions or environment credentials without prompting")
 	return cmd
 }
 
@@ -119,7 +125,7 @@ found; otherwise pass --backend.`,
 // optional: without one, --backend (or the only registered backend) is used.
 func (a *app) accountBackend(flags accountFlags) (backend.Backend, string, error) {
 	logger := newLogger(a.stderr, flags.verbose)
-	cfg := backend.Config{Logger: logger}
+	cfg := backend.Config{Logger: logger, NonInteractive: flags.nonInteractive}
 
 	path := flags.config
 	if path == "" {

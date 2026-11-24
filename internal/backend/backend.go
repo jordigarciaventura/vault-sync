@@ -41,8 +41,10 @@ type Backend interface {
 
 // Config is the provider-specific configuration handed to a Factory.
 type Config struct {
-	Type    string
-	Account string
+	// NonInteractive forbids terminal prompts; environment credentials remain usable.
+	NonInteractive bool
+	Type           string
+	Account        string
 	// Environment selects a provider environment (e.g. "dev" or "prod").
 	// Backends without environments must reject a non-empty value.
 	Environment string
@@ -105,10 +107,10 @@ type AccountStatus struct {
 type AccountManager interface {
 	// Status reports the current login state without prompting.
 	Status(ctx context.Context) (AccountStatus, error)
-	// Login logs in interactively and returns the resulting state. It does
+	// Login uses environment credentials or an allowed terminal and returns the state. It does
 	// nothing when a session to the configured server is active. It must
-	// fail with an error wrapping ErrAuthentication when no terminal is
-	// available.
+	// fail with an error wrapping ErrAuthentication when credentials are missing
+	// and prompting is unavailable or disabled.
 	Login(ctx context.Context) (AccountStatus, error)
 	// Logout ends the provider session.
 	Logout(ctx context.Context) error

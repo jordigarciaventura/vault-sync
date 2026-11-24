@@ -115,6 +115,15 @@ func (v *fakeVault) Run(_ context.Context, env []string, stdin []byte, args ...s
 		}
 		return nil, fmt.Errorf("bw %s %s: %s", verb, noun, msg)
 	}
+	if verb == "login" && noun == "--apikey" {
+		v.status = "locked"
+		return nil, nil
+	}
+	if verb == "unlock" && noun == "--passwordenv" {
+		v.status = "unlocked"
+		v.unlocked = true
+		return []byte("environment-session-key\n"), nil
+	}
 	if verb == "logout" {
 		if v.status == "unauthenticated" {
 			return nil, errors.New("You are not logged in.")
@@ -744,5 +753,62 @@ func TestListFiles(t *testing.T) {
 	slices.Sort(names)
 	if err != nil || !slices.Equal(names, []string{"config/a", "config/nested/b"}) {
 		t.Fatalf("%v %v", names, err)
+	}
+}
+
+func TestEnvironmentAuthentication(t *testing.T) {
+	for _, state := range []string{"unauthenticated", "locked", "unlocked"} {
+		t.Run(state, func(t *testing.T) {
+			t.Setenv("BW_SESSION", "")
+			t.Setenv("BW_CLIENTID", "fake-id")
+			t.Setenv("BW_CLIENTSECRET", "fake-secret")
+			t.Setenv("BW_PASSWORD", "fake-password")
+			v := newFakeVault()
+			v.status = state
+			b := newWithRunner(backend.Config{NonInteractive: true}, v)
+			if b.interactive() {
+				t.Fatal("prompts enabled")
+			}
+			if err := b.Authenticate(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if state != "unlocked" && b.client.session != "environment-session-key" {
+				t.Fatal("missing session")
+			}
+			for _, args := range v.calls {
+				for _, arg := range args {
+					if arg == "fake-password" || arg == "fake-secret" {
+						t.Fatal("credential in process arguments")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestEnvironmentAuthenticationErrors(t *testing.T) {
+	for _, tc := range []struct{ name, id, secret, password, fail string }{
+		{name: "missing"},
+		{name: "partial", id: "fake-id"},
+		{name: "login failure", id: "fake-id", secret: "fake-secret", fail: "login --apikey"},
+		{name: "unlock failure", id: "fake-id", secret: "fake-secret", password: "fake-password", fail: "unlock --passwordenv"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BW_SESSION", "")
+			t.Setenv("BW_CLIENTID", tc.id)
+			t.Setenv("BW_CLIENTSECRET", tc.secret)
+			t.Setenv("BW_PASSWORD", tc.password)
+			v := newFakeVault()
+			v.status = "unauthenticated"
+			v.failOn, v.failMsg = tc.fail, "fake-secret fake-password"
+			b := newWithRunner(backend.Config{NonInteractive: true}, v)
+			err := b.Authenticate(context.Background())
+			if !errors.Is(err, backend.ErrAuthentication) {
+				t.Fatalf("error = %v", err)
+			}
+			if strings.Contains(err.Error(), "fake-secret") || strings.Contains(err.Error(), "fake-password") {
+				t.Fatal("credentials leaked")
+			}
+		})
 	}
 }

@@ -16,6 +16,7 @@ authentication, REST API for secrets).
 | Task                    | Command                                         |
 | ----------------------- | ----------------------------------------------- |
 | Build                   | `task build` (→ `bin/vault-sync`)               |
+| Install/remove dev CLI | `task install-dev` / `task uninstall-dev` (`~/.local/bin/vault-sync-dev`) |
 | Unit tests (always run) | `task test` (`go test -race ./...`)             |
 | E2E tests (real accounts)  | `task test-e2e` (see DEVELOPMENT.md)            |
 | Lint                    | `task lint` (golangci-lint v2, `.golangci.yml`) |
@@ -66,7 +67,7 @@ internal/backend/infisical/  cli.go (auth via infisical CLI), api.go (REST), lay
 internal/toolinstall/    finds provider CLIs; installs them on first use (brew, else SHA-256-verified GitHub download)
 internal/sync/           pull/push orchestration + directory expansion (backend interfaces only)
 internal/filesystem/     atomic, symlink-safe writes
-internal/updater/        GitHub release check (cached, non-blocking) + self-upgrade
+internal/updater/        GitHub release check (cached, timeout-bounded) + self-upgrade
 internal/version/        ldflags-injected build metadata
 tools/docgen/            regenerates the README command reference (task docs)
 test/e2e/                end-to-end tests of the built binary (e2e tag); manifests in testdata/

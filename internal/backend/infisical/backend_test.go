@@ -858,3 +858,23 @@ func TestListFiles(t *testing.T) {
 		t.Fatal("listing requested values")
 	}
 }
+
+func TestListFilesMissingDirectory(t *testing.T) {
+	h := newHarness(t, backend.Config{})
+	_, err := h.b.ListFiles(context.Background(), projectSlug, "services/worker/credentials")
+	if !errors.Is(err, backend.ErrNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestNonInteractiveLoginRequiresCredentials(t *testing.T) {
+	r := &fakeCLI{}
+	b := newWithRunner(backend.Config{NonInteractive: true}, r)
+	b.getenv = func(string) string { return "" }
+	if b.interactive() {
+		t.Fatal("prompts enabled")
+	}
+	if _, err := b.Login(context.Background()); !errors.Is(err, backend.ErrAuthentication) {
+		t.Fatalf("error = %v", err)
+	}
+}

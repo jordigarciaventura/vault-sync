@@ -26,22 +26,40 @@ import (
 const manifestPermissions fs.FileMode = 0o644
 
 func newInitCommand(a *app) *cobra.Command {
-	var force bool
+	var force, nonInteractive bool
+	var dest, backendType, project string
+	var files []string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create a secrets.yaml interactively",
+		Short: "Create a secrets.yaml interactively or from flags",
 		Long: `Create a manifest by answering a few questions: the file name, the backend,
 the project name in the provider and the files to synchronize.
+
+Use --non-interactive with --backend, --project and repeated --file flags
+to create a manifest without prompts. --config selects the output path.
 
 The manifest is validated before it is written. An existing file is only
 replaced after confirmation (or with --force). Optional backend settings
 (account, environment, server) can be added to the file afterwards.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if nonInteractive {
+				return a.runInitNonInteractive(cmd, force, dest, backendType, project, files)
+			}
+			for _, name := range []string{"config", "backend", "project", "file"} {
+				if cmd.Flags().Changed(name) {
+					return fmt.Errorf("--%s requires --non-interactive", name)
+				}
+			}
 			return a.runInit(cmd, force)
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "overwrite an existing manifest without asking")
+	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "create a manifest from flags without prompting")
+	cmd.Flags().StringVarP(&dest, "config", "c", config.DefaultFileName, "path of the manifest to create")
+	cmd.Flags().StringVarP(&backendType, "backend", "b", "", "backend to use (required with --non-interactive)")
+	cmd.Flags().StringVar(&project, "project", "", "project name (required with --non-interactive)")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "file or directory to synchronize; repeat for each entry (required with --non-interactive)")
 	return cmd
 }
 
@@ -324,4 +342,38 @@ func displayDir(dir string) string {
 		return d
 	}
 	return "the current directory"
+}
+
+func (a *app) runInitNonInteractive(cmd *cobra.Command, force bool, name, backendType, project string, files []string) error {
+	if backendType == "" || project == "" || len(files) == 0 {
+		return errors.New("--non-interactive requires --backend, --project and at least one --file")
+	}
+	dest, err := filepath.Abs(name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(dest); err == nil && !force {
+		return fmt.Errorf("%s already exists; use --force to overwrite it", name)
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	m := manifest{Backend: manifestBackend{Type: backendType}, Project: project}
+	for _, path := range files {
+		m.Files = append(m.Files, manifestFile{Path: path})
+	}
+	data, err := m.marshal()
+	if err != nil {
+		return err
+	}
+	if _, err := config.Parse(data, filepath.Dir(dest), config.Options{KnownBackends: a.registry.Types()}); err != nil {
+		return err
+	}
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
+	if _, err := filesystem.WriteFile(dest, data, manifestPermissions, filesystem.Options{}); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Created %s with %s.\n", displayPath(dest), plural(len(files)))
+	return nil
 }

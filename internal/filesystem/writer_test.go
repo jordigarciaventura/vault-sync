@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func readFile(t *testing.T, p string) string {
@@ -209,5 +210,29 @@ func TestInspect(t *testing.T) {
 	}
 	if st, err := Inspect(existing, Options{ConfineTo: root}); err != nil || st != Updated {
 		t.Errorf("Inspect(existing) = %v, %v", st, err)
+	}
+}
+
+func TestBackupCollisionPreservesPreviousBackup(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(dest, []byte("original"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 24, 12, 0, 0, 123, time.UTC)
+	first, err := backupFile(dest, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := backupFile(dest, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("backup overwritten")
+	}
+	for _, name := range []string{first, second} {
+		if readFile(t, name) != "original" || mode(t, name) != 0o640 {
+			t.Fatal("backup content or permissions changed")
+		}
 	}
 }

@@ -8,10 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/jordigarciaventura/vault-sync/internal/backend"
 	"github.com/jordigarciaventura/vault-sync/internal/backend/bitwarden"
@@ -59,6 +57,7 @@ Typical workflow after cloning a repository:
 
 	root.AddCommand(
 		newInitCommand(a),
+		newValidateCommand(a),
 		newPullCommand(a),
 		newPushCommand(a),
 		newLoginCommand(a),
@@ -73,6 +72,10 @@ Typical workflow after cloning a repository:
 // Execute runs the CLI and returns the process exit code.
 func Execute(ctx context.Context, args []string) int {
 	a := &app{registry: Registry(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
+	return execute(ctx, args, a, updater.NewChecker(version.Current()))
+}
+
+func execute(ctx context.Context, args []string, a *app, checker *updater.Checker) int {
 	root := newRootCommand(a)
 	root.SetArgs(args)
 
@@ -80,28 +83,34 @@ func Execute(ctx context.Context, args []string) int {
 	if len(args) > 0 {
 		sub = args[0]
 	}
-	notify := sub != updateCheckCommand && sub != "self-upgrade"
-
-	var latest updater.Release
-	current := version.Current()
+	notify := sub != updateCheckCommand
+	current := checker.Current
+	var result chan updater.Release
 	if notify && updater.Enabled(current) {
-		checker := updater.NewChecker(current)
-		var fresh bool
-		latest, fresh = checker.Cached()
-		if !fresh {
-			spawnBackgroundCheck()
-		}
+		result = make(chan updater.Release, 1)
+		go func() {
+			latest, fresh := checker.Cached()
+			if !fresh {
+				if refreshed, _ := checker.Refresh(ctx); refreshed.Version != "" {
+					latest = refreshed
+				}
+			}
+			result <- latest
+		}()
 	}
 
 	err := root.ExecuteContext(ctx)
 
-	if notify && updater.Newer(current, latest.Version) && isTerminal(os.Stderr) {
-		_, _ = fmt.Fprintf(a.stderr, "\n%s", updater.Notice(current, latest.Version))
+	if result != nil {
+		latest := <-result
+		if updater.Newer(current, latest.Version) {
+			_, _ = fmt.Fprintf(a.stderr, "\n%s", styleUpdateNotice(current, latest.Version, styleFor(a.stderr)))
+		}
 	}
 
 	if err != nil {
 		if !errors.Is(err, errReported) {
-			_, _ = fmt.Fprintf(a.stderr, "Error: %v\n", err)
+			_, _ = fmt.Fprintf(a.stderr, "%s %v\n", styleFor(a.stderr).paint(colorRed, "Error:"), err)
 		}
 		return 1
 	}
@@ -110,20 +119,6 @@ func Execute(ctx context.Context, args []string) int {
 
 // errReported signals that the command already printed its failure summary.
 var errReported = errors.New("reported")
-
-// spawnBackgroundCheck refreshes the update cache in a detached process so the
-// current command never waits on the network.
-func spawnBackgroundCheck() {
-	exe, err := os.Executable()
-	if err != nil {
-		return
-	}
-	cmd := exec.Command(exe, updateCheckCommand)
-	if err := cmd.Start(); err != nil {
-		return
-	}
-	_ = cmd.Process.Release()
-}
 
 func newUpdateCheckCommand() *cobra.Command {
 	return &cobra.Command{
@@ -135,14 +130,12 @@ func newUpdateCheckCommand() *cobra.Command {
 			if !updater.Enabled(current) {
 				return nil
 			}
-			// Failures are silent: this runs detached from any terminal.
+			// Failures are silent for compatibility with older background checks.
 			_, _ = updater.NewChecker(current).Refresh(cmd.Context())
 			return nil
 		},
 	}
 }
-
-func isTerminal(f *os.File) bool { return term.IsTerminal(int(f.Fd())) }
 
 func newLogger(w io.Writer, verbose bool) *slog.Logger {
 	if !verbose {
