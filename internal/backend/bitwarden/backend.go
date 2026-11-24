@@ -57,6 +57,9 @@ var (
 
 // New is the backend.Factory for Bitwarden.
 func New(cfg backend.Config) (backend.Backend, error) {
+	if cfg.Region != "" {
+		return nil, fmt.Errorf("backend.region is not supported by the %s backend; remove it", Type)
+	}
 	if cfg.Environment != "" {
 		return nil, fmt.Errorf("backend.environment is not supported by the %s backend; remove it from secrets.yaml", Type)
 	}

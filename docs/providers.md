@@ -5,18 +5,19 @@
 ## Provider CLIs
 
 Each backend drives its provider's official CLI: `bw` for
-[Bitwarden](#bitwarden-backend), `infisical` for [Infisical](#infisical-backend).
+[Bitwarden](#bitwarden-backend), `infisical` for [Infisical](#infisical-backend),
+and `aws` for [Amazon S3](#amazon-s3-backend).
 Installing vault-sync does **not** install them. Instead, the first time a
 command needs one (because `secrets.yaml` uses that backend, or
 `vault-sync login --backend …`), vault-sync looks for it and installs it if
 it is missing:
 
-1. the path in `VAULT_SYNC_BW_PATH` / `VAULT_SYNC_INFISICAL_PATH`, if set;
+1. the path in `VAULT_SYNC_BW_PATH` / `VAULT_SYNC_INFISICAL_PATH` / `VAULT_SYNC_AWS_PATH`, if set;
 2. the executable on `PATH`;
 3. a copy vault-sync downloaded earlier, in `~/.local/share/vault-sync/bin`
    (or `$XDG_DATA_HOME/vault-sync/bin`);
 4. otherwise it installs it: with **Homebrew** (`brew install bitwarden-cli` or
-   `brew install infisical`) when `brew` is available, or else by downloading
+   `brew install infisical` / `brew install awscli`) when `brew` is available, or else by downloading
    the latest official release from GitHub
    ([bitwarden/clients](https://github.com/bitwarden/clients/releases),
    [Infisical/cli](https://github.com/Infisical/cli/releases)) into the
@@ -207,3 +208,68 @@ address or the part before `@`) or the machine identity's name or id.
 | `INFISICAL_TOKEN`           | Machine identity access token to use instead of a user login   |
 | `INFISICAL_DOMAIN`          | Infisical instance (read by the Infisical CLI)                 |
 | `VAULT_SYNC_INFISICAL_PATH` | Path to the `infisical` executable to use (skips lookup and install) |
+
+## Amazon S3 backend
+
+```yaml
+backend:
+  type: s3
+  account: "123456789012" # init saves the verified AWS account ID
+  region: eu-west-1
+project: my-secret-bucket/my-project
+files:
+  - path: .env
+  - path: config/
+```
+
+The first project segment selects the **bucket**; remaining segments
+prefix object keys. This example stores `.env` at `my-project/.env`.
+Push replaces the current object; pull restores exact bytes, including binary
+and empty files. Directory discovery lists keys recursively, automatically
+paginating and ignoring folder-marker objects.
+
+**Initialization.** `vault-sync init` asks for the region, optional expected AWS
+account ID and a globally unique bucket name (optionally followed by `/prefix`).
+It authenticates, creates a general-purpose bucket with owner-enforced object
+ownership and explicitly blocks public access, then saves the bucket, region
+and verified AWS account ID. No objects or prefix markers are uploaded.
+An existing bucket is reused only after ownership and region checks; its policy
+is left unchanged. For unavailable or inaccessible names, interactive init explains the ownership
+or permission issue and asks for another globally unique name. Non-interactive
+init fails without writing the manifest. AWS error codes are preserved with
+safe, actionable hints; provider output is never printed. A denied ownership
+check can mean the name belongs to another account or that `s3:ListBucket`
+permission is missing. Regions such as `eu-south-2` require
+[account opt-in](https://docs.aws.amazon.com/accounts/latest/reference/manage-acct-regions.html). Pull and push use existing buckets and never create them.
+Enable bucket versioning if you need remote revision history.
+
+**Installation.** Use AWS CLI v2. vault-sync finds it through
+`VAULT_SYNC_AWS_PATH` or `PATH`, and installs `awscli` through Homebrew when
+available. AWS does not publish binary releases on GitHub: without Homebrew,
+install it using the [official AWS CLI installer](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+The GitHub download fallback described above applies to Bitwarden and Infisical.
+
+**Authentication.** Existing AWS credentials, environment credentials, profiles
+and IAM roles are reused. When credentials are missing or expired in an
+interactive terminal, vault-sync starts `aws login` for browser authentication
+(requires AWS CLI v2.32 or newer). Configured SSO profiles use `aws sso login`
+instead. You can also log in beforehand with AWS tooling. `AWS_PROFILE` selects a profile; `AWS_REGION` / `AWS_DEFAULT_REGION`
+select the default region when `backend.region` is absent. A saved region takes precedence. Credentials never belong in the manifest. vault-sync checks
+`sts get-caller-identity` and verifies `backend.account` when provided.
+`vault-sync login` and `logout` are not supported for this backend; manage the
+AWS session with AWS tooling. `--non-interactive` never starts browser login;
+provide usable credentials before running init, pull or push.
+`backend.environment` and `backend.server` are unsupported.
+
+Init additionally needs `s3:CreateBucket` and `s3:PutBucketPublicAccessBlock`
+for new buckets; checking an existing bucket requires `s3:ListBucket` and
+`s3:GetBucketLocation`.
+
+Grant `s3:GetObject` and `s3:PutObject` on the selected objects and
+`s3:ListBucket` on the bucket for directory discovery. Restrict access to the
+project prefix where appropriate. SSE-KMS objects also require the relevant
+KMS permissions. Objects use the bucket's default server-side encryption;
+keep the bucket private and configure its encryption and access policies.
+
+The adapter uses the official [AWS S3 CLI commands](https://docs.aws.amazon.com/cli/latest/reference/s3/)
+and [paginated ListObjectsV2 API](https://docs.aws.amazon.com/cli/latest/reference/s3api/list-objects-v2.html).

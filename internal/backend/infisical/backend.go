@@ -64,6 +64,9 @@ var (
 
 // New is the backend.Factory for Infisical.
 func New(cfg backend.Config) (backend.Backend, error) {
+	if cfg.Region != "" {
+		return nil, fmt.Errorf("backend.region is not supported by the %s backend; remove it", Type)
+	}
 	if _, err := normalizeServer(cfg.Server); err != nil {
 		return nil, err
 	}

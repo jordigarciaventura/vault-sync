@@ -10,7 +10,7 @@ import (
 var ErrContainerUnavailable = errors.New("container unavailable")
 
 // SetupField describes a non-secret backend setting collected by init.
-// Key names a Config field: account, environment or server.
+// Key names a Config field: account, environment, server or region.
 type SetupField struct {
 	Key     string
 	Label   string

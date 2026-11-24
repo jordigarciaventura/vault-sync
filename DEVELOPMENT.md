@@ -19,8 +19,8 @@ follow are in [AGENTS.md](AGENTS.md).
 - [Task](https://taskfile.dev/) v3
 - [golangci-lint](https://golangci-lint.run/) v2
 - [GoReleaser](https://goreleaser.com/) ≥ 2.19 (only for release checks)
-- Nothing provider-specific: `bw` / `infisical` are installed on first use
-  (see `internal/toolinstall`) when you run `pull`/`push` against a real
+- Nothing provider-specific: `bw` / `infisical` / `aws` are installed on first use
+  (see `internal/toolinstall`; AWS CLI requires Homebrew or manual installation) when you run `pull`/`push` against a real
   provider
 
 ## Tasks
@@ -127,7 +127,8 @@ Notes:
 ## Agent workflows
 
 `init --non-interactive` takes `--backend`, `--project`, repeated `--file`,
-and optional `--config`/`--force` plus `--account`, `--server` and `--environment`. It validates before remote setup, authenticates without prompts,
+and optional `--config`/`--force` plus `--account`, `--server`, `--environment`
+and `--region`. It validates before remote setup, authenticates without prompts,
 initializes an empty container, then writes its portable location. Interactive
 init obtains setting prompts through `backend.ProjectInitializer.SetupFields`;
 `InitializeProject` performs provider-specific creation and returns non-secret
@@ -135,7 +136,7 @@ configuration and the canonical project reference. Init never uploads files.
 Providers lacking this optional interface retain manifest-only initialization. `validate` loads the manifest and constructs/closes the backend to check
 provider settings; lazy constructors must not install CLIs or authenticate.
 `backend.Config.NonInteractive` disables terminal authentication in Bitwarden and Infisical
-and is passed by init/login/pull/push. Environment credentials remain available:
+and is passed by init/login/pull/push. S3 also uses it to disable browser login. Environment credentials remain available:
 Bitwarden API keys (`BW_CLIENTID`/`BW_CLIENTSECRET`), `BW_PASSWORD` for unlocking,
 `BW_SESSION`, and Infisical's existing `INFISICAL_TOKEN` support. Bitwarden
 credential-command errors omit provider output; credentials must never appear
@@ -170,7 +171,7 @@ Use a **dedicated test account**: every run overwrites `.env` in the
 `vault-sync-e2e` project/folder, which `push` creates if it does not exist.
 The manifests live in [test/e2e/testdata/](test/e2e/testdata/)
 (`bitwarden.yaml`, `infisical.yaml`) and pin no account, so whoever is logged
-in runs them. `task test-e2e` tests every backend, so log in to all of them
+in runs them. `task test-e2e` tests both E2E-supported backends, so log in to both
 first; authentication must work without a terminal (the tests fail rather
 than prompt):
 
@@ -244,6 +245,7 @@ internal/config/             secrets.yaml parsing + validation (provider-indepen
 internal/backend/            Backend interface, sentinel errors, Registry
 internal/backend/bitwarden/  bw CLI adapter
 internal/backend/infisical/  Infisical adapter: CLI for auth, REST API for secrets
+internal/backend/s3/         AWS CLI adapter; bucket/prefix namespaces and binary object streams
 internal/toolinstall/        finds provider CLIs; installs them on first use (brew or verified GitHub download)
 internal/sync/               pull/push orchestration and recursive directory expansion
 internal/filesystem/         atomic, symlink-safe writes
@@ -257,7 +259,7 @@ VERSION                      current release version (source of truth for releas
 ```
 
 `internal/cli` → `internal/config` + `internal/sync` → `backend.Backend`
-interface ← `internal/backend/{bitwarden,infisical}`. The sync service and config never
+interface ← `internal/backend/{bitwarden,infisical,s3}`. The sync service and config never
 import a provider. To add a backend, implement `backend.Backend` in
 `internal/backend/<name>/` and register its factory in `internal/cli/root.go`:
 
@@ -300,7 +302,7 @@ cover nested namespaces, sibling isolation and updates using fakes only.
 
 **Directory entries.** The sync service expands local directories on push and
 uses the optional provider-independent `backend.FileLister` interface on pull.
-Both built-in providers implement it. For missing local paths without an explicit
+All built-in providers implement it. For missing local paths without an explicit
 directory declaration, pull tries remote directory discovery before single-file
 resolution. Empty listings or not-found errors fall back to a file; other
 discovery errors are reported. Discovery returns logical names only;
@@ -411,8 +413,27 @@ already holds the right value, so do not run `task bump` again. If the tag
 was never pushed, undo the bump locally with `git tag -d vX.Y.Z && git reset
 --hard HEAD~1`.
 
+## S3 development
+
+The S3 adapter uses the AWS CLI through a fakeable runner. Unit tests cover
+binary and empty object round trips, namespace isolation, directory listings,
+unsafe keys and AWS account validation without making AWS requests. `project`
+selects a bucket and optional key prefix; init creates the bucket, while
+pull/push require it to exist. Region is persisted in `backend.region` and
+propagated through init, validate and sync.
+Authentication uses `sts get-caller-identity`; `backend.account` optionally checks
+the AWS account ID. AWS handles profiles, roles, region and credential lookup.
+Interactive authentication falls back to browser login (`aws login`, or
+`aws sso login` for configured SSO profiles). No `AccountManager` is implemented;
+explicit login/logout remains managed with AWS tooling. Bucket initialization
+checks ownership and region before reuse and never changes an existing bucket.
+The runner extracts only allowlisted AWS error codes and supplies static hints;
+arbitrary stderr and stdout never appear in errors. `ErrContainerUnavailable`
+allows interactive init to ask for another name without repeating other setup
+questions; non-interactive init returns the error immediately.
 
 Bitwarden init persists the server URL; the adapter selects it while logged out
 and rejects a logged-in server mismatch. Infisical init persists the resolved
 project ID, environment and server URL. Initialization failures do not replace
 the local manifest, and remotely created containers are retained for retry.
+The existing real-account E2E suite covers Bitwarden and Infisical only.

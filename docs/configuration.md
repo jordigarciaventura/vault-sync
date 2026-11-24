@@ -21,10 +21,11 @@ checks normalized paths, duplicate destinations and Go regular expressions.
 
 | Key                     | Required | Description                                                                 |
 | ----------------------- | -------- | --------------------------------------------------------------------------- |
-| `backend.type`          | yes      | Backend identifier. Supported: `bitwarden`, `infisical`.                    |
-| `backend.account`       | no       | Expected provider account (see [providers](providers.md)).       |
+| `backend.type`          | yes      | Backend identifier. Supported: `bitwarden`, `infisical`, `s3`.                    |
+| `backend.account`       | no       | Expected provider account (AWS account ID for S3) (see [providers](providers.md)).       |
 | `backend.environment`   | no       | Provider environment (Infisical only; default `dev`).                       |
 | `backend.server`        | no       | Provider instance URL (Bitwarden or Infisical).          |
+| `backend.region`        | no       | S3 bucket region; saved by init and passed to AWS commands. |
 | `project`               | yes      | Provider container, optionally followed by `/folder/subfolder` (see below). |
 | `files[].path`          | yes      | Local file or directory **and** logical resource name.                            |
 | `files[].regex`         | no       | Go regular expression filtering paths relative to a directory. |
@@ -92,17 +93,19 @@ vault-sync push --dry-run --non-interactive
 Init authenticates and creates an empty container before saving the manifest;
 it never uploads the listed files. It reuses an existing accessible container
 without deleting or overwriting its secrets. Provider-specific settings can be
-supplied with `--account`, `--server` and `--environment`:
+supplied with `--account`, `--server`, `--environment` and `--region`:
 
 ```bash
-vault-sync init --non-interactive --backend bitwarden --project my-project/app \
-  --server https://vault.bitwarden.com --file .env
+vault-sync init --non-interactive --backend s3 --project my-secret-bucket/app \
+  --region eu-west-1 --file .env
 ```
 
 This requires working environment credentials or a provider session; it never
 opens a browser or reads authentication prompts. Interactive init collects these
-settings and drives provider login when needed. It saves the Bitwarden server
-and folder, or the Infisical server, environment and resolved project ID.
+settings and drives provider login when needed. It saves the S3 region and
+verified AWS account ID, the Bitwarden server and folder, or the Infisical
+server, environment and resolved project ID. AWS profiles are local credential
+settings and are not stored in the manifest; select one with `AWS_PROFILE`.
 A new machine needs its own credentials with access to the saved container.
 
 If remote creation succeeds but a later step fails, the container is retained;
@@ -127,6 +130,7 @@ and `BW_PASSWORD` for unlocking on each pull/push invocation; an existing
 `BW_SESSION` also works. `login` establishes the account login but keeps any
 session key in memory only, so it cannot export a session to later commands.
 These use the provider's [documented API key and password environment options](https://bitwarden.com/help/cli/).
+For S3, use AWS environment credentials or a configured AWS profile/role.
 For Infisical, supply `INFISICAL_TOKEN` and optionally `INFISICAL_DOMAIN`;
 `login --non-interactive` checks the existing token or user session.
 Credentials stay in environment variables rather than command arguments or
@@ -145,8 +149,8 @@ Notices go to stderr; use `vault-sync self-upgrade` to install an update.
 ### Project paths
 
 Use `project: vault-sync/example` to share one provider container across
-repositories. The first segment selects the Bitwarden folder or Infisical
-project; the remaining segments prefix all remote filenames. For example,
+repositories. The first segment selects the Bitwarden folder, Infisical
+project or S3 bucket; the remaining segments prefix all remote filenames. For example,
 `config/.env` lives at `example/config/.env` inside `vault-sync`. Pull and
 directory discovery return names relative to `example`.
 

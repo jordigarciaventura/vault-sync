@@ -19,7 +19,7 @@ type initializingBackend struct {
 }
 
 func (b *initializingBackend) SetupFields() []backend.SetupField {
-	return []backend.SetupField{{Key: "environment", Label: "Provider environment", Default: "us-east-1"}}
+	return []backend.SetupField{{Key: "region", Label: "Bucket region", Default: "us-east-1"}}
 }
 func (b *initializingBackend) InitializeProject(ctx context.Context, project string) (backend.ProjectSetup, error) {
 	return b.provision(ctx, project)
@@ -33,13 +33,13 @@ func TestInitProvisionsPortableLocation(t *testing.T) {
 			factory := func(cfg backend.Config) (backend.Backend, error) {
 				return &initializingBackend{cfg: cfg, provision: func(_ context.Context, project string) (backend.ProjectSetup, error) {
 					called++
-					if project != "bucket/prefix" || cfg.Environment != "eu-west-1" || cfg.NonInteractive == interactive {
+					if project != "bucket/prefix" || cfg.Region != "eu-west-1" || cfg.NonInteractive == interactive {
 						t.Fatalf("project=%s config=%+v", project, cfg)
 					}
-					return backend.ProjectSetup{Project: "resolved-id/prefix", Config: backend.Config{Type: "memory", Environment: cfg.Environment, Account: "123"}}, nil
+					return backend.ProjectSetup{Project: "resolved-id/prefix", Config: backend.Config{Type: "memory", Region: cfg.Region, Account: "123"}}, nil
 				}}, nil
 			}
-			args := []string{"init", "--non-interactive", "--backend", "memory", "--project", "bucket/prefix", "--environment", "eu-west-1", "--file", "config/"}
+			args := []string{"init", "--non-interactive", "--backend", "memory", "--project", "bucket/prefix", "--region", "eu-west-1", "--file", "config/"}
 			input := ""
 			if interactive {
 				args = []string{"init"}
@@ -57,14 +57,14 @@ func TestInitProvisionsPortableLocation(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, err := runWith(t, func(loaded backend.Config) (backend.Backend, error) {
-				if loaded.Environment != "eu-west-1" || loaded.Account != "123" {
+				if loaded.Region != "eu-west-1" || loaded.Account != "123" {
 					t.Fatalf("saved backend settings were not propagated: %+v", loaded)
 				}
 				return &memBackend{}, nil
 			}, "validate", "--config", "secrets.yaml"); err != nil {
 				t.Fatal(err)
 			}
-			if called != 1 || cfg.Project != "resolved-id/prefix" || cfg.Backend.Environment != "eu-west-1" || cfg.Backend.Account != "123" {
+			if called != 1 || cfg.Project != "resolved-id/prefix" || cfg.Backend.Region != "eu-west-1" || cfg.Backend.Account != "123" {
 				t.Fatalf("calls %d, manifest %s", called, data)
 			}
 		})

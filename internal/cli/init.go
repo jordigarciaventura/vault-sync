@@ -35,21 +35,22 @@ func newInitCommand(a *app) *cobra.Command {
 		Use:   "init",
 		Short: "Create a secrets.yaml interactively or from flags",
 		Long: `Log in to a provider, create an empty remote container and save its location
-in secrets.yaml. Answer questions about the backend settings, project
-name, and files to synchronize. Existing accessible containers are reused.
+in secrets.yaml. Answer questions about the backend settings, project or
+bucket name, and files to synchronize. Existing accessible containers are reused.
 
 Use --non-interactive with --backend, --project and repeated --file flags
 to create a manifest without prompts. --config selects the output path.
 
 The manifest is validated before it is written. An existing file is only
 replaced after confirmation (or with --force). Initialization authenticates and
-may create remote resources, but never uploads files.`,
+may create remote resources, but never uploads files. For S3, select a bucket
+name and region; AWS browser login starts when credentials are unavailable.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if nonInteractive {
 				return a.runInitNonInteractive(cmd, force, dest, backendType, project, files, settings)
 			}
-			for _, name := range []string{"config", "backend", "project", "file", "account", "environment", "server"} {
+			for _, name := range []string{"config", "backend", "project", "file", "account", "region", "environment", "server"} {
 				if cmd.Flags().Changed(name) {
 					return fmt.Errorf("--%s requires --non-interactive", name)
 				}
@@ -57,7 +58,8 @@ may create remote resources, but never uploads files.`,
 			return a.runInit(cmd, force)
 		},
 	}
-	cmd.Flags().StringVar(&settings.Account, "account", "", "expected provider account")
+	cmd.Flags().StringVar(&settings.Account, "account", "", "expected provider account (AWS account ID for S3)")
+	cmd.Flags().StringVar(&settings.Region, "region", "", "S3 bucket region (default us-east-1)")
 	cmd.Flags().StringVar(&settings.Environment, "environment", "", "provider environment (Infisical default dev)")
 	cmd.Flags().StringVar(&settings.Server, "server", "", "provider instance URL (Bitwarden or Infisical)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "overwrite an existing manifest without asking")
@@ -143,7 +145,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	var project string
 	_, _ = fmt.Fprintln(out)
 	for {
-		answer, err := p.ask(ctx, "Container name (project/folder[/prefix]) in "+backendType, filepath.Base(root))
+		answer, err := p.ask(ctx, "Container name (bucket/project/folder[/prefix]) in "+backendType, filepath.Base(root))
 		if err != nil {
 			return err
 		}
@@ -197,7 +199,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 		}
 		p.warn("%v", err)
 		for {
-			name, askErr := p.ask(ctx, "Another container name", "")
+			name, askErr := p.ask(ctx, "Another container name (globally unique for S3)", "")
 			if askErr != nil {
 				return askErr
 			}
@@ -242,6 +244,7 @@ type manifestBackend struct {
 	Account     string `yaml:"account,omitempty"`
 	Environment string `yaml:"environment,omitempty"`
 	Server      string `yaml:"server,omitempty"`
+	Region      string `yaml:"region,omitempty"`
 }
 
 type manifestFile struct {
@@ -432,7 +435,7 @@ func (a *app) runInitNonInteractive(cmd *cobra.Command, force bool, name, backen
 }
 
 func (m manifestBackend) config(nonInteractive bool) backend.Config {
-	return backend.Config{Type: m.Type, Account: m.Account, Environment: m.Environment, Server: m.Server, NonInteractive: nonInteractive}
+	return backend.Config{Type: m.Type, Account: m.Account, Environment: m.Environment, Server: m.Server, Region: m.Region, NonInteractive: nonInteractive}
 }
 
 func (a *app) initSettings(ctx context.Context, typ string, settings manifestBackend, p *prompter, nonInteractive bool) (manifestBackend, error) {
@@ -452,6 +455,8 @@ func (a *app) initSettings(ctx context.Context, typ string, settings manifestBac
 		switch field.Key {
 		case "account":
 			value = &settings.Account
+		case "region":
+			value = &settings.Region
 		case "environment":
 			value = &settings.Environment
 		case "server":
@@ -491,7 +496,7 @@ func (a *app) initializeManifest(ctx context.Context, m *manifest, root string, 
 		return fmt.Errorf("initialize %s container: %w", b.Name(), err)
 	}
 	m.Project = setup.Project
-	m.Backend = manifestBackend{Type: setup.Config.Type, Account: setup.Config.Account, Environment: setup.Config.Environment, Server: setup.Config.Server}
+	m.Backend = manifestBackend{Type: setup.Config.Type, Account: setup.Config.Account, Environment: setup.Config.Environment, Server: setup.Config.Server, Region: setup.Config.Region}
 	// Provider-returned locations must also satisfy manifest validation.
 	if problems := m.problems(root, a.registry.Types()); len(problems) > 0 {
 		return fmt.Errorf("initialized container has invalid configuration: %s", strings.Join(problems, "; "))

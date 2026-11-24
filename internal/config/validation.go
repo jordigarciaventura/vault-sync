@@ -51,6 +51,7 @@ func validate(raw *rawConfig, root string, opts Options) (*Config, error) {
 		}
 		cfg.Backend = BackendConfig{
 			Type:        typ,
+			Region:      strings.TrimSpace(raw.Backend.Region),
 			Account:     strings.TrimSpace(raw.Backend.Account),
 			Environment: strings.TrimSpace(raw.Backend.Environment),
 			Server:      strings.TrimSpace(raw.Backend.Server),

@@ -33,7 +33,7 @@ func newValidateCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := a.registry.New(backend.Config{Type: cfg.Backend.Type, Account: cfg.Backend.Account, Environment: cfg.Backend.Environment, Server: cfg.Backend.Server, NonInteractive: true})
+			b, err := a.registry.New(backend.Config{Type: cfg.Backend.Type, Account: cfg.Backend.Account, Region: cfg.Backend.Region, Environment: cfg.Backend.Environment, Server: cfg.Backend.Server, NonInteractive: true})
 			if err != nil {
 				return err
 			}

@@ -37,6 +37,7 @@ type Config struct {
 type BackendConfig struct {
 	Type    string
 	Account string
+	Region  string
 	// Environment selects a provider environment (e.g. "dev" or "prod") for
 	// backends that have them. Empty means the backend's default.
 	Environment string
@@ -74,6 +75,7 @@ type rawConfig struct {
 type rawBackend struct {
 	Type        string `yaml:"type"`
 	Account     string `yaml:"account"`
+	Region      string `yaml:"region"`
 	Environment string `yaml:"environment"`
 	Server      string `yaml:"server"`
 }

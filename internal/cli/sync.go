@@ -84,6 +84,7 @@ func (a *app) runSync(cmd *cobra.Command, flags syncFlags, pull bool) error {
 		Type:           cfg.Backend.Type,
 		NonInteractive: flags.nonInteractive,
 		Account:        cfg.Backend.Account,
+		Region:         cfg.Backend.Region,
 		Environment:    cfg.Backend.Environment,
 		Server:         cfg.Backend.Server,
 		Logger:         logger,

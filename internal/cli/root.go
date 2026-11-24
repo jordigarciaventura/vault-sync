@@ -14,6 +14,7 @@ import (
 	"github.com/jordigarciaventura/vault-sync/internal/backend"
 	"github.com/jordigarciaventura/vault-sync/internal/backend/bitwarden"
 	"github.com/jordigarciaventura/vault-sync/internal/backend/infisical"
+	"github.com/jordigarciaventura/vault-sync/internal/backend/s3"
 	"github.com/jordigarciaventura/vault-sync/internal/updater"
 	"github.com/jordigarciaventura/vault-sync/internal/version"
 )
@@ -33,6 +34,7 @@ func Registry() *backend.Registry {
 	r := backend.NewRegistry()
 	r.Register(bitwarden.Type, bitwarden.New)
 	r.Register(infisical.Type, infisical.New)
+	r.Register(s3.Type, s3.New)
 	return r
 }
 
@@ -41,7 +43,7 @@ func newRootCommand(a *app) *cobra.Command {
 		Use:   "vault-sync",
 		Short: "Restore project files from a secrets provider",
 		Long: `vault-sync synchronizes the files listed in a project's secrets.yaml with a
-remote secrets provider (Bitwarden or Infisical).
+remote secrets provider (Bitwarden, Infisical or Amazon S3).
 
 Typical workflow after cloning a repository:
 

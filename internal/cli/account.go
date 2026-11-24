@@ -142,6 +142,7 @@ func (a *app) accountBackend(flags accountFlags) (backend.Backend, string, error
 		if flags.backend != "" && flags.backend != m.Backend.Type {
 			return nil, "", fmt.Errorf("--backend %s conflicts with backend %q in %s; drop the flag", flags.backend, m.Backend.Type, m.Path)
 		}
+		cfg.Region = m.Backend.Region
 		cfg.Type, cfg.Account, cfg.Environment, cfg.Server = m.Backend.Type, m.Backend.Account, m.Backend.Environment, m.Backend.Server
 	} else {
 		types := a.registry.Types()

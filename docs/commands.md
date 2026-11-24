@@ -22,7 +22,7 @@ same information in the terminal.
 ### `vault-sync`
 
 vault-sync synchronizes the files listed in a project's secrets.yaml with a
-remote secrets provider (Bitwarden or Infisical).
+remote secrets provider (Bitwarden, Infisical or Amazon S3).
 
 Typical workflow after cloning a repository:
 
@@ -42,15 +42,16 @@ vault-sync [command] [flags]
 ### `vault-sync init`
 
 Log in to a provider, create an empty remote container and save its location
-in secrets.yaml. Answer questions about the backend settings, project
-name, and files to synchronize. Existing accessible containers are reused.
+in secrets.yaml. Answer questions about the backend settings, project or
+bucket name, and files to synchronize. Existing accessible containers are reused.
 
 Use --non-interactive with --backend, --project and repeated --file flags
 to create a manifest without prompts. --config selects the output path.
 
 The manifest is validated before it is written. An existing file is only
 replaced after confirmation (or with --force). Initialization authenticates and
-may create remote resources, but never uploads files.
+may create remote resources, but never uploads files. For S3, select a bucket
+name and region; AWS browser login starts when credentials are unavailable.
 
 ```text
 vault-sync init [flags]
@@ -58,7 +59,7 @@ vault-sync init [flags]
 
 | Flag | Description |
 | ---- | ----------- |
-| `--account string` | Expected provider account. |
+| `--account string` | Expected provider account (AWS account ID for S3). |
 | `-b, --backend string` | Backend to use (required with --non-interactive). |
 | `-c, --config string` | Path of the manifest to create. Default: `secrets.yaml`. |
 | `--environment string` | Provider environment (Infisical default dev). |
@@ -66,6 +67,7 @@ vault-sync init [flags]
 | `-f, --force` | Overwrite an existing manifest without asking. |
 | `--non-interactive` | Create a manifest from flags without prompting. |
 | `--project string` | Project name (required with --non-interactive). |
+| `--region string` | S3 bucket region (default us-east-1). |
 | `--server string` | Provider instance URL (Bitwarden or Infisical). |
 
 ### `vault-sync login`
@@ -88,7 +90,7 @@ vault-sync login [flags]
 
 | Flag | Description |
 | ---- | ----------- |
-| `-b, --backend string` | Backend to use when no secrets.yaml is found (bitwarden, infisical). |
+| `-b, --backend string` | Backend to use when no secrets.yaml is found (bitwarden, infisical, s3). |
 | `-c, --config string` | Path to the manifest (default: ./secrets.yaml, searched upwards; optional). |
 | `--non-interactive` | Use existing sessions or environment credentials without prompting. |
 | `-v, --verbose` | Print diagnostic details (never secret values). |
@@ -104,7 +106,7 @@ vault-sync logout [flags]
 
 | Flag | Description |
 | ---- | ----------- |
-| `-b, --backend string` | Backend to use when no secrets.yaml is found (bitwarden, infisical). |
+| `-b, --backend string` | Backend to use when no secrets.yaml is found (bitwarden, infisical, s3). |
 | `-c, --config string` | Path to the manifest (default: ./secrets.yaml, searched upwards; optional). |
 | `-v, --verbose` | Print diagnostic details (never secret values). |
 

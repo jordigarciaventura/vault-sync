@@ -47,6 +47,8 @@ type Config struct {
 	NonInteractive bool
 	Type           string
 	Account        string
+	// Region selects the storage region for providers that support it.
+	Region string
 	// Environment selects a provider environment (e.g. "dev" or "prod").
 	// Backends without environments must reject a non-empty value.
 	Environment string
