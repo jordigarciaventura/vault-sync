@@ -22,7 +22,7 @@ authentication, REST API for secrets).
 | Lint                    | `task lint` (golangci-lint v2, `.golangci.yml`) |
 | Format                  | `task fmt`                                      |
 | Release config check    | `task release-check` (GoReleaser ≥ 2.19)        |
-| Regenerate CLI docs     | `task docs` (README command reference)          |
+| Regenerate CLI docs     | `task docs` (CLI command reference)          |
 | Current version         | `task version` (reads `VERSION`)                |
 | Cut a release           | `task bump [-- minor\|major]` (user only)       |
 
@@ -38,12 +38,13 @@ A change is not done until [README.md](README.md) and
 every change, check whether either file refers to what you touched, and
 update it in the same change if it does. Do not leave this as a follow-up.
 
-- **README.md** (user docs): installation, provider CLI install behaviour,
-  quick start, `secrets.yaml` fields and validation, backend options and
-  authentication (Bitwarden, Infisical), update notifications, security
-  guarantees (permissions, atomic writes, what is logged), and examples.
-  The command reference between the generated markers comes from
-  `task docs`; do not edit it by hand.
+- **README.md** (user docs): a minimal introduction, installation, quick start
+  and links to detailed documentation.
+- **docs/** (user reference): configuration and validation in
+  `configuration.md`, provider CLI installation and backend authentication/storage
+  in `providers.md`, sync behavior in `usage.md`, and the generated command
+  reference in `commands.md`. Run `task docs`; do not edit the generated block
+  by hand. Keep these references accurate when related behavior changes.
 - **DEVELOPMENT.md** (contributor docs): requirements and tool versions,
   `Taskfile.yml` tasks, running the dev build, tests and build tags, git
   hooks and CI, the architecture/layout description, and the release
@@ -69,7 +70,8 @@ internal/sync/           pull/push orchestration + directory expansion (backend 
 internal/filesystem/     atomic, symlink-safe writes
 internal/updater/        GitHub release check (cached, timeout-bounded) + self-upgrade
 internal/version/        ldflags-injected build metadata
-tools/docgen/            regenerates the README command reference (task docs)
+docs/                   configuration, providers, sync behavior and command reference
+tools/docgen/            regenerates the CLI command reference (task docs)
 test/e2e/                end-to-end tests of the built binary (e2e tag); manifests in testdata/
 scripts/bump-version.sh  bumps VERSION, commits and tags (task bump)
 secrets.schema.json      editor JSON Schema for secrets.yaml

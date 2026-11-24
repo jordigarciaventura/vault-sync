@@ -1,4 +1,4 @@
-// Command docgen regenerates the command reference in README.md from the
+// Command docgen regenerates the command reference in docs/commands.md from the
 // vault-sync command tree. Run it with `task docs`; `-check` fails instead of
 // writing when the file is out of date (used by CI).
 package main
@@ -18,7 +18,7 @@ const (
 )
 
 func main() {
-	file := flag.String("file", "README.md", "Markdown file containing the generated-commands markers")
+	file := flag.String("file", "docs/commands.md", "Markdown file containing the generated-commands markers")
 	check := flag.Bool("check", false, "exit with status 1 if the file is out of date instead of writing it")
 	flag.Parse()
 

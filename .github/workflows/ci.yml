@@ -25,7 +25,7 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
-      - name: Check README command reference is up to date
+      - name: Check CLI command reference is up to date
         run: go run ./tools/docgen -check
       - uses: golangci/golangci-lint-action@v9
         with:

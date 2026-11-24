@@ -81,12 +81,12 @@ tasks:
       - go mod tidy
 
   docs:
-    desc: Regenerate the command reference in README.md from the CLI
+    desc: Regenerate the command reference in docs/commands.md from the CLI
     cmds:
       - go run ./tools/docgen
 
   docs-check:
-    desc: Fail if the command reference in README.md is out of date
+    desc: Fail if the command reference in docs/commands.md is out of date
     cmds:
       - go run ./tools/docgen -check
 

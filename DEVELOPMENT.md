@@ -36,7 +36,7 @@ task test         # unit tests with -race
 task lint         # golangci-lint
 task fmt          # gofmt + goimports
 task tidy         # go mod tidy
-task docs         # regenerate the command reference in README.md
+task docs         # regenerate the command reference in docs/commands.md
 task docs-check   # fail if the command reference is out of date
 task snapshot     # build release artifacts locally into dist/
 task version      # print the current release version (VERSION)
@@ -194,9 +194,10 @@ next to them is git-ignored).
 
 - [README.md](README.md) is for end users: what the tool does, how to install
   it and how to use it.
+- [docs/](docs/) contains the configuration, provider, sync behavior and command references.
 - This file is for contributors.
 
-The **Commands** section of the README is generated from the cobra command
+The [command reference](docs/commands.md) is generated from the cobra command
 tree by [`tools/docgen`](tools/docgen/main.go) (using
 `cli.WriteMarkdownDocs` in [internal/cli/docs.go](internal/cli/docs.go)). It
 sits between the `<!-- BEGIN GENERATED COMMANDS … -->` and
@@ -213,7 +214,7 @@ validation and the registered backends. `init` writes a directive pointing to
 the schema on GitHub's `main` branch and a repository link; its output test
 covers these comments.
 
-CI runs the same generator with `-check` and fails if the README is stale.
+CI runs the same generator with `-check` and fails if the command reference is stale.
 
 ## Git hooks and CI
 
@@ -226,7 +227,7 @@ CI runs the same generator with `-check` and fails if the README is stale.
 | `pre-push`   | `go test -race ./...`                                                                  |
 
 **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and every pull
-request: tidy check, README command-reference check and golangci-lint,
+request: tidy check, CLI command-reference check and golangci-lint,
 `go vet` + race tests on Linux and macOS, and a GoReleaser `check` + snapshot
 build. Dependabot keeps Go modules and Actions up to date.
 
@@ -244,7 +245,7 @@ internal/sync/               pull/push orchestration and recursive directory exp
 internal/filesystem/         atomic, symlink-safe writes
 internal/updater/            GitHub release check (cached, timeout-bounded) + self-upgrade
 internal/version/            ldflags-injected build metadata
-tools/docgen/                regenerates the README command reference
+tools/docgen/                regenerates the CLI command reference
 test/e2e/                    end-to-end tests of the binary against real accounts (e2e build tag)
 scripts/bump-version.sh      bumps VERSION, commits and tags a release (task bump)
 secrets.schema.json          editor JSON Schema for secrets.yaml
