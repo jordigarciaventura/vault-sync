@@ -47,6 +47,10 @@ type BackendConfig struct {
 
 // File is a single file entry of the manifest.
 type File struct {
+	// Regex filters slash-separated paths relative to a directory.
+	Regex string
+	// Directory marks an explicitly declared directory.
+	Directory bool
 	// Path is the path exactly as written in the manifest.
 	Path string
 	// Name is the logical, provider-independent resource identifier
@@ -75,6 +79,7 @@ type rawBackend struct {
 }
 
 type rawFile struct {
+	Regex       string `yaml:"regex"`
 	Path        string `yaml:"path"`
 	Permissions string `yaml:"permissions"`
 }

@@ -151,12 +151,22 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out := []map[string]any{}
-		prefix := env + "\x00" + dir + "\x00"
+
 		for k, v := range f.secrets {
-			if key, ok := strings.CutPrefix(k, prefix); ok {
-				out = append(out, map[string]any{"id": "sec-" + key, "secretKey": key, "secretValue": v, "type": "shared", "secretValueHidden": false})
+			parts := strings.Split(k, "\x00")
+			if parts[0] != env {
+				continue
 			}
+			secretDir, key := parts[1], parts[2]
+			if secretDir != dir && (q.Get("recursive") != "true" || !strings.HasPrefix(secretDir, strings.TrimSuffix(dir, "/")+"/")) {
+				continue
+			}
+			if q.Get("viewSecretValue") == "false" {
+				v = ""
+			}
+			out = append(out, map[string]any{"id": "sec-" + key, "secretKey": key, "secretPath": secretDir, "secretValue": v, "type": "shared", "secretValueHidden": false})
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"secrets": out})
 
 	case (r.Method == http.MethodPost || r.Method == http.MethodPatch) && strings.HasPrefix(r.URL.Path, "/api/v4/secrets/"):
@@ -831,5 +841,20 @@ func TestServerMachineIdentity(t *testing.T) {
 	// The token is checked against the configured server.
 	if h.cli.statusDomain != h.b.server {
 		t.Errorf("status --domain = %q, want %q", h.cli.statusDomain, h.b.server)
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	h := newHarness(t, backend.Config{})
+	h.api.put("dev", "/config", "a", "a")
+	h.api.put("dev", "/config/nested", "b", "b")
+	h.api.put("dev", "/other", "c", "c")
+	names, err := h.b.ListFiles(context.Background(), projectSlug, "config")
+	slices.Sort(names)
+	if err != nil || !slices.Equal(names, []string{"config/a", "config/nested/b"}) {
+		t.Fatalf("%v %v", names, err)
+	}
+	if !strings.Contains(h.api.requests[len(h.api.requests)-1], "viewSecretValue=false") {
+		t.Fatal("listing requested values")
 	}
 }

@@ -731,3 +731,18 @@ func TestToolAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestListFiles(t *testing.T) {
+	v := newFakeVault()
+	folder := v.addFolder("P")
+	v.addNote(folder, "config/a", "a")
+	it := v.addNote(folder, "config/nested/b", "")
+	v.addAttachment(it.ID, "b", []byte("b"))
+	v.addNote(folder, "other/c", "c")
+	b := newTestBackend(t, v, "")
+	names, err := b.ListFiles(context.Background(), "P", "config")
+	slices.Sort(names)
+	if err != nil || !slices.Equal(names, []string{"config/a", "config/nested/b"}) {
+		t.Fatalf("%v %v", names, err)
+	}
+}

@@ -185,7 +185,7 @@ internal/backend/            Backend interface, sentinel errors, Registry
 internal/backend/bitwarden/  bw CLI adapter
 internal/backend/infisical/  Infisical adapter: CLI for auth, REST API for secrets
 internal/toolinstall/        finds provider CLIs; installs them on first use (brew or verified GitHub download)
-internal/sync/               pull/push orchestration (depends only on backend.Backend)
+internal/sync/               pull/push orchestration and recursive directory expansion
 internal/filesystem/         atomic, symlink-safe writes
 internal/updater/            GitHub release check (cached, non-blocking) + self-upgrade
 internal/version/            ldflags-injected build metadata
@@ -216,6 +216,13 @@ product and machine-account tokens. The Password Manager CLI covers both
 representations (notes and attachments) with the user's existing login. A
 `bws`-based backend can be added later as a separate backend type without
 changing manifests' `files` or `project`.
+
+**Directory entries.** The sync service expands local directories on push and
+uses the optional provider-independent `backend.FileLister` interface on pull.
+Both built-in providers implement it. Discovery returns logical names only;
+normal file resolution still detects ambiguous resources. Regexes match paths
+relative to each directory. Expansion rejects unsafe remote names, skips local
+symlinks, and reports empty selections and overlapping entries as errors.
 
 **Bitwarden binary notes.** The backend keeps text notes literal and stores
 binary files as Base64 when the encoded body fits the 5,000-byte note limit

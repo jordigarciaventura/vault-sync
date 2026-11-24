@@ -619,3 +619,38 @@ func looksLikeUUID(s string) bool {
 	}
 	return true
 }
+
+// ListFiles discovers shared secrets recursively without fetching their values.
+func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]string, error) {
+	if err := b.Authenticate(ctx); err != nil {
+		return nil, err
+	}
+	id, err := b.projectID(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	q := url.Values{
+		"projectId": {id}, "environment": {b.env}, "secretPath": {"/" + directory},
+		"recursive": {"true"}, "viewSecretValue": {"false"},
+		"expandSecretReferences": {"false"}, "includeImports": {"false"},
+		"includePersonalOverrides": {"false"},
+	}
+	var out struct {
+		Secrets []secret `json:"secrets"`
+	}
+	if err := b.api.do(ctx, http.MethodGet, "/v4/secrets", q, nil, &out); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, s := range out.Secrets {
+		if s.Type != typeShared {
+			continue
+		}
+		dir := strings.TrimPrefix(s.Path, "/")
+		if s.Path == "" {
+			return nil, errors.New("infisical listing omitted secret paths; update the server")
+		}
+		names = append(names, strings.TrimPrefix(dir+"/"+s.Key, "/"))
+	}
+	return names, nil
+}

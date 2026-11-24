@@ -468,3 +468,35 @@ func (b *Backend) listItems(ctx context.Context, folderID string) ([]item, error
 	b.items[folderID] = kept
 	return kept, nil
 }
+
+// ListFiles discovers notes and attachments using the same rules as ResolveFile.
+func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]string, error) {
+	if err := b.Authenticate(ctx); err != nil {
+		return nil, err
+	}
+	f, ok, err := b.folder(ctx, project, false)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, backend.NotFoundError(project, directory, "")
+	}
+	items, err := b.listItems(ctx, f.ID)
+	if err != nil {
+		return nil, err
+	}
+	candidates := map[string]bool{}
+	for _, it := range items {
+		candidates[it.Name] = true
+		for _, a := range it.Attachments {
+			candidates[a.FileName] = true
+		}
+	}
+	var names []string
+	for name := range candidates {
+		if (directory == "" || strings.HasPrefix(name, directory+"/")) && len(resolve(items, name)) > 0 {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}

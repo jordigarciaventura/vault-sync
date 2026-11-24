@@ -113,3 +113,9 @@ type AccountManager interface {
 	// Logout ends the provider session.
 	Logout(ctx context.Context) error
 }
+
+// FileLister discovers logical filenames recursively beneath a directory.
+// Names must be canonical relative slash-separated paths; contents are not returned.
+type FileLister interface {
+	ListFiles(ctx context.Context, project, directory string) ([]string, error)
+}

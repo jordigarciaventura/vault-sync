@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -109,8 +110,8 @@ func parseFile(rf rawFile, root string) (File, error) {
 	if strings.IndexFunc(p, unicode.IsControl) >= 0 {
 		return File{}, fmt.Errorf("path %q: must not contain control characters", p)
 	}
-	if strings.HasSuffix(p, "/") {
-		return File{}, fmt.Errorf("path %q: must be a file, not a directory", p)
+	if _, err := regexp.Compile(rf.Regex); err != nil {
+		return File{}, errors.New("regex: invalid regular expression; use Go regexp syntax")
 	}
 	if strings.HasPrefix(p, "~") {
 		return File{}, fmt.Errorf("path %q: '~' is not expanded; use an absolute path", p)
@@ -121,7 +122,7 @@ func parseFile(rf rawFile, root string) (File, error) {
 	clean := path.Clean(slashed)
 	name := strings.TrimPrefix(clean, "/")
 
-	if name == "" || name == "." {
+	if (name == "" || name == ".") && !strings.HasSuffix(p, "/") && rf.Regex == "" && p != "." {
 		return File{}, fmt.Errorf("path %q: does not name a file", p)
 	}
 	if !abs && (name == ".." || strings.HasPrefix(name, "../")) {
@@ -143,6 +144,8 @@ func parseFile(rf rawFile, root string) (File, error) {
 
 	return File{
 		Path:        p,
+		Regex:       rf.Regex,
+		Directory:   strings.HasSuffix(p, "/") || rf.Regex != "" || p == ".",
 		Name:        name,
 		Destination: dest,
 		Absolute:    abs,

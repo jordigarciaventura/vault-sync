@@ -64,7 +64,7 @@ internal/backend/        Backend interface, sentinel errors, Registry
 internal/backend/bitwarden/  bw CLI adapter: client.go (exec), resolver.go (pure matching), backend.go
 internal/backend/infisical/  cli.go (auth via infisical CLI), api.go (REST), layout.go (pure mapping), backend.go
 internal/toolinstall/    finds provider CLIs; installs them on first use (brew, else SHA-256-verified GitHub download)
-internal/sync/           pull/push orchestration (depends only on backend.Backend)
+internal/sync/           pull/push orchestration + directory expansion (backend interfaces only)
 internal/filesystem/     atomic, symlink-safe writes
 internal/updater/        GitHub release check (cached, non-blocking) + self-upgrade
 internal/version/        ldflags-injected build metadata

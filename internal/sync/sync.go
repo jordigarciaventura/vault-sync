@@ -68,7 +68,7 @@ func (s *Service) Pull(ctx context.Context, cfg *config.Config, opts Options) ([
 	if err := s.Backend.Authenticate(ctx); err != nil {
 		return nil, err
 	}
-	return s.each(cfg, opts, func(f config.File) (Action, error) {
+	return s.each(ctx, cfg, opts, true, func(f config.File) (Action, error) {
 		return s.pullOne(ctx, cfg, f, opts.DryRun)
 	})
 }
@@ -78,28 +78,44 @@ func (s *Service) Push(ctx context.Context, cfg *config.Config, opts Options) ([
 	if err := s.Backend.Authenticate(ctx); err != nil {
 		return nil, err
 	}
-	return s.each(cfg, opts, func(f config.File) (Action, error) {
+	return s.each(ctx, cfg, opts, false, func(f config.File) (Action, error) {
 		return s.pushOne(ctx, cfg, f, opts.DryRun)
 	})
 }
 
-func (s *Service) each(cfg *config.Config, opts Options, fn func(config.File) (Action, error)) ([]Result, error) {
+func (s *Service) each(ctx context.Context, cfg *config.Config, opts Options, pull bool, fn func(config.File) (Action, error)) ([]Result, error) {
 	results := make([]Result, 0, len(cfg.Files))
 	failed := 0
-	for _, f := range cfg.Files {
-		action, err := fn(f)
-		if err != nil {
-			action = ActionFailed
-			failed++
+	seen := map[string]bool{}
+	for _, entry := range cfg.Files {
+		files, expandErr := s.expand(ctx, cfg, entry, pull)
+		if expandErr != nil {
+			files = []config.File{entry}
 		}
-		r := Result{File: f, Action: action, DryRun: opts.DryRun, Err: err}
-		results = append(results, r)
-		if opts.Report != nil {
-			opts.Report(r)
+		for _, f := range files {
+			var action Action
+			err := expandErr
+			if err == nil {
+				if seen[f.Name] || seen[f.Destination] {
+					err = fmt.Errorf("overlapping file entries for %s; remove the overlap", f.Name)
+				} else {
+					seen[f.Name], seen[f.Destination] = true, true
+					action, err = fn(f)
+				}
+			}
+			if err != nil {
+				action = ActionFailed
+				failed++
+			}
+			r := Result{File: f, Action: action, DryRun: opts.DryRun, Err: err}
+			results = append(results, r)
+			if opts.Report != nil {
+				opts.Report(r)
+			}
 		}
 	}
 	if failed > 0 {
-		return results, fmt.Errorf("%w: %d of %d", ErrSomeFilesFailed, failed, len(cfg.Files))
+		return results, fmt.Errorf("%w: %d of %d", ErrSomeFilesFailed, failed, len(results))
 	}
 	return results, nil
 }

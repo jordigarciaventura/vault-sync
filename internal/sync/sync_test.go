@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,7 +65,7 @@ func testConfig(t *testing.T, root string, names ...string) *config.Config {
 			dest = filepath.Join(root, n)
 		}
 		cfg.Files = append(cfg.Files, config.File{
-			Path: n, Name: strings.TrimPrefix(filepath.ToSlash(n), "/"),
+			Path: n, Name: strings.TrimPrefix(filepath.ToSlash(filepath.Clean(n)), "/"),
 			Destination: dest, Absolute: abs, Permissions: 0o600,
 		})
 	}
@@ -217,5 +218,88 @@ func TestPushDryRunDoesNotStore(t *testing.T) {
 	}
 	if len(m.stored) != 0 {
 		t.Error("dry run stored data")
+	}
+}
+
+func (m *mockBackend) ListFiles(_ context.Context, _, _ string) ([]string, error) {
+	var names []string
+	for name := range m.files {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func TestDirectoryRoundTrip(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprint(dryRun), func(t *testing.T) {
+			root := t.TempDir()
+			cfg, err := config.Parse([]byte("backend: {type: mock}\nproject: P\nfiles:\n  - path: secrets/\n    regex: '\\.txt$'\n    permissions: '0640'\n"), root, config.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := &mockBackend{files: map[string]string{"secrets/a.txt": "a", "secrets/nested/b.txt": "b", "secrets/skip.bin": "skip", "secrets-other/no.txt": "no"}}
+			svc := &Service{Backend: m}
+			results, err := svc.Pull(context.Background(), cfg, Options{DryRun: dryRun})
+			if err != nil || len(results) != 2 {
+				t.Fatalf("%v %v", results, err)
+			}
+			if dryRun {
+				if _, err := os.Stat(filepath.Join(root, "secrets")); !os.IsNotExist(err) {
+					t.Fatal("dry run created directory")
+				}
+				return
+			}
+			for _, r := range results {
+				info, err := os.Stat(r.File.Destination)
+				if err != nil || info.Mode().Perm() != 0o640 {
+					t.Fatalf("permissions: %v %v", info, err)
+				}
+			}
+			results, err = svc.Push(context.Background(), cfg, Options{})
+			if err != nil || len(results) != 2 || len(m.stored) != 2 {
+				t.Fatalf("%v %v %v", results, err, m.stored)
+			}
+		})
+	}
+}
+
+func TestDirectoryUnsafeAndEmpty(t *testing.T) {
+	for _, name := range []string{"secrets/../../escape", "elsewhere/x"} {
+		cfg := testConfig(t, t.TempDir(), "secrets/")
+		cfg.Files[0].Directory = true
+		m := &mockBackend{files: map[string]string{name: "x"}}
+		_, err := (&Service{Backend: m}).Pull(context.Background(), cfg, Options{})
+		if !errors.Is(err, ErrSomeFilesFailed) {
+			t.Fatalf("%q: %v", name, err)
+		}
+	}
+}
+
+func TestDirectoryPushSkipsSymlinks(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dir", "ok"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "dir", "ok"), filepath.Join(root, "dir", "link")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(t, root, "dir")
+	m := &mockBackend{}
+	results, err := (&Service{Backend: m}).Push(context.Background(), cfg, Options{})
+	if err != nil || len(results) != 1 || len(m.stored) != 1 {
+		t.Fatalf("%v %v", results, err)
+	}
+}
+
+func TestDirectoryOverlap(t *testing.T) {
+	cfg := testConfig(t, t.TempDir(), "dir/", "dir/a")
+	cfg.Files[0].Directory = true
+	m := &mockBackend{files: map[string]string{"dir/a": "x"}}
+	results, err := (&Service{Backend: m}).Pull(context.Background(), cfg, Options{})
+	if !errors.Is(err, ErrSomeFilesFailed) || len(results) != 2 || results[1].Err == nil {
+		t.Fatalf("%v %v", results, err)
 	}
 }

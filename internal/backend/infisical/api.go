@@ -195,6 +195,7 @@ func (a *api) projectBySlug(ctx context.Context, slug string) (project, error) {
 }
 
 type secret struct {
+	Path              string `json:"secretPath"`
 	ID                string `json:"id"`
 	Key               string `json:"secretKey"`
 	Value             string `json:"secretValue"`

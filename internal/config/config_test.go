@@ -67,8 +67,7 @@ func TestParseErrors(t *testing.T) {
 		{"missing path", "backend: {type: bitwarden}\nproject: p\nfiles: [{permissions: '0600'}]", "path: is required"},
 		{"escaping path", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: ../secret}]", "must stay inside"},
 		{"escaping nested path", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: a/../../secret}]", "must stay inside"},
-		{"dot path", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: .}]", "does not name a file"},
-		{"directory path", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: dir/}]", "must be a file"},
+		{"invalid regex", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: dir/, regex: '['}]", "regex:"},
 		{"tilde path", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: ~/x}]", "not expanded"},
 		{"absolute dotdot", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: /etc/../x}]", "must not contain '..'"},
 		{"duplicate", "backend: {type: bitwarden}\nproject: p\nfiles: [{path: a/b}, {path: ./a/b}]", "duplicates files[0]"},
@@ -169,5 +168,17 @@ func TestParseBackendServer(t *testing.T) {
 	}
 	if cfg.Backend.Server != "https://secrets.example.com" {
 		t.Errorf("server = %q", cfg.Backend.Server)
+	}
+}
+
+func TestDirectoryConfig(t *testing.T) {
+	for _, p := range []string{"dir/", ".", "/shared/"} {
+		cfg, err := Parse([]byte("backend: {type: bitwarden}\nproject: p\nfiles: [{path: '"+p+"', regex: '.*'}]"), t.TempDir(), Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.Files[0].Directory || cfg.Files[0].Regex != ".*" {
+			t.Fatalf("%+v", cfg.Files[0])
+		}
 	}
 }

@@ -131,7 +131,8 @@ secret values, tokens or provider-specific ids.
 | `backend.environment`   | no       | Provider environment (Infisical only; default `dev`).                       |
 | `backend.server`        | no       | Provider instance URL, e.g. a self-hosted server (Infisical only).          |
 | `project`               | yes      | Project / namespace in the provider (a Bitwarden folder, an Infisical project). |
-| `files[].path`          | yes      | Local destination **and** logical resource name.                            |
+| `files[].path`          | yes      | Local file or directory **and** logical resource name.                            |
+| `files[].regex`         | no       | Go regular expression filtering paths relative to a directory. |
 | `files[].permissions`   | no       | Octal Unix mode, e.g. `"0600"` (default) or `"0640"`. Quote it.             |
 
 **Paths.** Relative paths are resolved against the directory containing
@@ -146,8 +147,32 @@ the provider is the cleaned path without a leading slash:
 | `/shared/keys/firmware-signing.key` | `shared/keys/firmware-signing.key` |
 
 Validation rejects unknown keys, unknown backends, empty file lists,
-duplicates, `~` paths, directory paths and invalid or setuid/setgid modes,
+duplicates, `~` paths, invalid regexes and invalid or setuid/setgid modes,
 listing every problem at once.
+
+**Directories and filters.** A directory entry synchronizes regular files
+recursively, preserving their relative paths and applying the entry's permissions
+to every file. Existing local directories are recognized automatically. Use a
+trailing slash (such as `config/`) to declare a directory even when it does not
+exist locally yet. `.` selects the manifest directory. Adding `regex` also
+declares a directory; omit it to include all files.
+
+```yaml
+files:
+  - path: config/
+    regex: '(^|/)\.env(\..*)?$'
+  - path: shared/keys/
+    permissions: "0600"
+```
+
+The regex uses Go regexp syntax and matches slash-separated file paths relative
+to the selected directory, including nested directories and hidden files.
+Matching is unanchored unless you use `^` and `$`. Invalid expressions fail
+validation. Pull discovers matching logical names in the provider, so it works
+on a fresh clone; push discovers local files. Symlinks and other non-regular
+files are skipped during directory uploads. An empty selection is an error.
+Overlapping entries fail for repeated files rather than silently applying
+different permissions. Dry runs perform discovery without writing or uploading.
 
 When `--config` is not given, `vault-sync` looks for `secrets.yaml` in the
 current directory and then in its parents, so it also works from
