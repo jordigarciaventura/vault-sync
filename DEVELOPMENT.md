@@ -158,6 +158,12 @@ After changing a command, a flag or any help text:
 task docs
 ```
 
+The root [`secrets.schema.json`](secrets.schema.json) describes the manifest for
+YAML language servers. Keep it in sync with `internal/config` fields and
+validation and the registered backends. `init` writes a directive pointing to
+the schema on GitHub's `main` branch and a repository link; its output test
+covers these comments.
+
 CI runs the same generator with `-check` and fails if the README is stale.
 
 ## Git hooks and CI
@@ -192,6 +198,7 @@ internal/version/            ldflags-injected build metadata
 tools/docgen/                regenerates the README command reference
 test/e2e/                    end-to-end tests of the binary against real accounts (e2e build tag)
 scripts/bump-version.sh      bumps VERSION, commits and tags a release (task bump)
+secrets.schema.json          editor JSON Schema for secrets.yaml
 VERSION                      current release version (source of truth for release tags)
 ```
 

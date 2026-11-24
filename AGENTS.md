@@ -71,6 +71,7 @@ internal/version/        ldflags-injected build metadata
 tools/docgen/            regenerates the README command reference (task docs)
 test/e2e/                end-to-end tests of the built binary (e2e tag); manifests in testdata/
 scripts/bump-version.sh  bumps VERSION, commits and tags (task bump)
+secrets.schema.json      editor JSON Schema for secrets.yaml
 VERSION                  current release version, MAJOR.MINOR.PATCH (source of truth)
 ```
 

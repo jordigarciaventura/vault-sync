@@ -28,7 +28,7 @@ func TestInitWritesValidManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "backend:\n  type: memory\n\nproject: My Project\n\nfiles:\n  - path: .env\n  - path: app/.env\n  - path: /shared/x.key\n"
+	want := "# yaml-language-server: $schema=https://raw.githubusercontent.com/jordigarciaventura/vault-sync/main/secrets.schema.json\n# vault-sync: https://github.com/jordigarciaventura/vault-sync\n\nbackend:\n  type: memory\n\nproject: My Project\n\nfiles:\n  - path: .env\n  - path: app/.env\n  - path: /shared/x.key\n"
 	if string(data) != want {
 		t.Errorf("manifest:\n%s\nwant:\n%s", data, want)
 	}

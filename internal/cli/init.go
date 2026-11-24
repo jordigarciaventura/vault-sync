@@ -192,6 +192,8 @@ type manifestFile struct {
 // the layout of the documented examples.
 func (m manifest) marshal() ([]byte, error) {
 	var buf bytes.Buffer
+	buf.WriteString("# yaml-language-server: $schema=https://raw.githubusercontent.com/jordigarciaventura/vault-sync/main/secrets.schema.json\n")
+	buf.WriteString("# vault-sync: https://github.com/jordigarciaventura/vault-sync\n\n")
 	sections := []any{
 		map[string]any{"backend": m.Backend},
 		map[string]any{"project": m.Project},

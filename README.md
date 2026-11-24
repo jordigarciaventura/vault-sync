@@ -124,6 +124,19 @@ filesystem.
 `secrets.yaml` lives at the repository root and is safe to commit: it holds no
 secret values, tokens or provider-specific ids.
 
+[`secrets.schema.json`](secrets.schema.json) provides editor completion and
+validation. `vault-sync init` includes the YAML language server directive and
+a link to this repository in every generated manifest. For an existing manifest,
+add these comments at the top:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jordigarciaventura/vault-sync/main/secrets.schema.json
+# vault-sync: https://github.com/jordigarciaventura/vault-sync
+```
+
+The schema covers the manifest structure and supported settings; the CLI also
+checks normalized paths, duplicate destinations and Go regular expressions.
+
 | Key                     | Required | Description                                                                 |
 | ----------------------- | -------- | --------------------------------------------------------------------------- |
 | `backend.type`          | yes      | Backend identifier. Supported: `bitwarden`, `infisical`.                    |
