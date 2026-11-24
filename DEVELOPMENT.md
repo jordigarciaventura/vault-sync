@@ -127,11 +127,15 @@ Notes:
 ## Agent workflows
 
 `init --non-interactive` takes `--backend`, `--project`, repeated `--file`,
-and optional `--config`/`--force`, validates before writing, and never reads
-stdin. `validate` loads the manifest and constructs/closes the backend to check
+and optional `--config`/`--force` plus `--account`, `--server` and `--environment`. It validates before remote setup, authenticates without prompts,
+initializes an empty container, then writes its portable location. Interactive
+init obtains setting prompts through `backend.ProjectInitializer.SetupFields`;
+`InitializeProject` performs provider-specific creation and returns non-secret
+configuration and the canonical project reference. Init never uploads files.
+Providers lacking this optional interface retain manifest-only initialization. `validate` loads the manifest and constructs/closes the backend to check
 provider settings; lazy constructors must not install CLIs or authenticate.
-`backend.Config.NonInteractive` disables terminal authentication in both providers
-and is passed by login/pull/push. Environment credentials remain available:
+`backend.Config.NonInteractive` disables terminal authentication in Bitwarden and Infisical
+and is passed by init/login/pull/push. Environment credentials remain available:
 Bitwarden API keys (`BW_CLIENTID`/`BW_CLIENTSECRET`), `BW_PASSWORD` for unlocking,
 `BW_SESSION`, and Infisical's existing `INFISICAL_TOKEN` support. Bitwarden
 credential-command errors omit provider output; credentials must never appear
@@ -406,3 +410,9 @@ If a release fails halfway, delete the GitHub Release and the tag
 already holds the right value, so do not run `task bump` again. If the tag
 was never pushed, undo the bump locally with `git tag -d vX.Y.Z && git reset
 --hard HEAD~1`.
+
+
+Bitwarden init persists the server URL; the adapter selects it while logged out
+and rejects a logged-in server mismatch. Infisical init persists the resolved
+project ID, environment and server URL. Initialization failures do not replace
+the local manifest, and remotely created containers are retained for retry.

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -40,6 +41,7 @@ const noteEncodingField = "vault-sync.encoding"
 type Backend struct {
 	client      *client
 	account     string
+	server      string
 	log         *slog.Logger
 	interactive func() bool
 
@@ -59,8 +61,12 @@ func New(cfg backend.Config) (backend.Backend, error) {
 		return nil, fmt.Errorf("backend.environment is not supported by the %s backend; remove it from secrets.yaml", Type)
 	}
 	if cfg.Server != "" {
-		return nil, fmt.Errorf("backend.server is not supported by the %s backend; remove it from secrets.yaml and select the server with `bw config server <url>`", Type)
+		u, err := url.Parse(cfg.Server)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return nil, fmt.Errorf("backend.server: use a valid Bitwarden server URL")
+		}
 	}
+
 	return newWithRunner(cfg, newExecRunner()), nil
 }
 
@@ -72,6 +78,7 @@ func newWithRunner(cfg backend.Config, r runner) *Backend {
 	return &Backend{
 		client:      &client{run: r, session: os.Getenv(sessionEnv)},
 		account:     cfg.Account,
+		server:      strings.TrimRight(cfg.Server, "/"),
 		log:         log.With("backend", Type),
 		interactive: func() bool { return !cfg.NonInteractive && term.IsTerminal(int(os.Stdin.Fd())) },
 		folders:     map[string]folder{},
@@ -97,6 +104,9 @@ func (b *Backend) Authenticate(ctx context.Context) error {
 	}
 	st, err := b.client.status(ctx)
 	if err != nil {
+		return err
+	}
+	if err := b.selectServer(ctx, st); err != nil {
 		return err
 	}
 	b.log.Debug("bw status", "status", st.Status, "server", st.ServerURL)
@@ -186,6 +196,7 @@ func (b *Backend) Status(ctx context.Context) (backend.AccountStatus, error) {
 		Locked:          st.Status != "unlocked",
 		User:            st.UserEmail,
 		Server:          st.ServerURL,
+		ServerMismatch:  b.server != "" && strings.TrimRight(st.ServerURL, "/") != b.server,
 		AccountMismatch: checkAccount(b.account, st.UserEmail) != nil,
 	}, nil
 }
@@ -194,7 +205,20 @@ func (b *Backend) Status(ctx context.Context) (backend.AccountStatus, error) {
 // already logged in.
 func (b *Backend) Login(ctx context.Context) (backend.AccountStatus, error) {
 	st, err := b.Status(ctx)
-	if err != nil || st.LoggedIn {
+	if err != nil {
+		return st, err
+	}
+	if st.ServerMismatch {
+		return st, fmt.Errorf("%w: Bitwarden server differs from backend.server; run `vault-sync logout` and retry", backend.ErrAuthentication)
+	}
+	if st.LoggedIn {
+		return st, nil
+	}
+	raw, err := b.client.status(ctx)
+	if err != nil {
+		return st, err
+	}
+	if err := b.selectServer(ctx, raw); err != nil {
 		return st, err
 	}
 	if err := b.login(ctx); err != nil {
@@ -536,4 +560,18 @@ func (b *Backend) ListFiles(ctx context.Context, project, directory string) ([]s
 		}
 	}
 	return names, nil
+}
+
+// selectServer configures the portable manifest endpoint before a fresh login.
+func (b *Backend) selectServer(ctx context.Context, st status) error {
+	if b.server == "" || strings.TrimRight(st.ServerURL, "/") == b.server {
+		return nil
+	}
+	if st.Status != "unauthenticated" {
+		return fmt.Errorf("%w: Bitwarden server differs from backend.server; run `vault-sync logout` and retry", backend.ErrAuthentication)
+	}
+	if _, err := b.client.run.Run(ctx, nil, nil, "config", "server", b.server); err != nil {
+		return fmt.Errorf("%w: configure Bitwarden server failed; run `bw config server` while logged out", backend.ErrAuthentication)
+	}
+	return nil
 }

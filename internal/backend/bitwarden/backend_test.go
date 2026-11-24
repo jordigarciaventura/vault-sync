@@ -718,9 +718,9 @@ func TestNewRejectsEnvironment(t *testing.T) {
 	}
 }
 
-func TestNewRejectsServer(t *testing.T) {
-	_, err := New(backend.Config{Type: Type, Server: "https://vault.example.com"})
-	if err == nil || !strings.Contains(err.Error(), "bw config server") {
+func TestNewRejectsInvalidServer(t *testing.T) {
+	_, err := New(backend.Config{Type: Type, Server: "not-a-url"})
+	if err == nil || !strings.Contains(err.Error(), "backend.server") {
 		t.Errorf("err = %v", err)
 	}
 }

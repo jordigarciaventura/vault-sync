@@ -3,7 +3,8 @@
 [Back to README](../README.md) · [Providers](providers.md)
 
 `secrets.yaml` lives at the repository root and is safe to commit: it holds no
-secret values, tokens or provider-specific ids.
+secret values or tokens. Provider container IDs and location settings are saved
+so another machine can reach the same container after authenticating.
 
 [`secrets.schema.json`](../secrets.schema.json) provides editor completion and
 validation. `vault-sync init` includes the YAML language server directive and
@@ -21,9 +22,9 @@ checks normalized paths, duplicate destinations and Go regular expressions.
 | Key                     | Required | Description                                                                 |
 | ----------------------- | -------- | --------------------------------------------------------------------------- |
 | `backend.type`          | yes      | Backend identifier. Supported: `bitwarden`, `infisical`.                    |
-| `backend.account`       | no       | Account the backend must be logged in as (see [providers](providers.md)).       |
+| `backend.account`       | no       | Expected provider account (see [providers](providers.md)).       |
 | `backend.environment`   | no       | Provider environment (Infisical only; default `dev`).                       |
-| `backend.server`        | no       | Provider instance URL, e.g. a self-hosted server (Infisical only).          |
+| `backend.server`        | no       | Provider instance URL (Bitwarden or Infisical).          |
 | `project`               | yes      | Provider container, optionally followed by `/folder/subfolder` (see below). |
 | `files[].path`          | yes      | Local file or directory **and** logical resource name.                            |
 | `files[].regex`         | no       | Go regular expression filtering paths relative to a directory. |
@@ -88,6 +89,26 @@ vault-sync push --dry-run --non-interactive
 
 `init --non-interactive` requires `--backend`, `--project` and at least one
 `--file` (repeat for multiple paths). Existing manifests require `--force`.
+Init authenticates and creates an empty container before saving the manifest;
+it never uploads the listed files. It reuses an existing accessible container
+without deleting or overwriting its secrets. Provider-specific settings can be
+supplied with `--account`, `--server` and `--environment`:
+
+```bash
+vault-sync init --non-interactive --backend bitwarden --project my-project/app \
+  --server https://vault.bitwarden.com --file .env
+```
+
+This requires working environment credentials or a provider session; it never
+opens a browser or reads authentication prompts. Interactive init collects these
+settings and drives provider login when needed. It saves the Bitwarden server
+and folder, or the Infisical server, environment and resolved project ID.
+A new machine needs its own credentials with access to the saved container.
+
+If remote creation succeeds but a later step fails, the container is retained;
+fix the reported problem and retry init. The manifest is written only after
+successful initialization. A cancelled or failed remote setup leaves an existing
+manifest unchanged.
 `validate` checks parsing, paths and backend settings locally without installing
 provider CLIs, logging in or checking remote resources. It exits with status
 `1` for invalid configuration. It finds the manifest in parent directories,

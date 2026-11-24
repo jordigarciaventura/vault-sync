@@ -41,15 +41,16 @@ vault-sync [command] [flags]
 
 ### `vault-sync init`
 
-Create a manifest by answering a few questions: the file name, the backend,
-the project name in the provider and the files to synchronize.
+Log in to a provider, create an empty remote container and save its location
+in secrets.yaml. Answer questions about the backend settings, project
+name, and files to synchronize. Existing accessible containers are reused.
 
 Use --non-interactive with --backend, --project and repeated --file flags
 to create a manifest without prompts. --config selects the output path.
 
 The manifest is validated before it is written. An existing file is only
-replaced after confirmation (or with --force). Optional backend settings
-(account, environment, server) can be added to the file afterwards.
+replaced after confirmation (or with --force). Initialization authenticates and
+may create remote resources, but never uploads files.
 
 ```text
 vault-sync init [flags]
@@ -57,12 +58,15 @@ vault-sync init [flags]
 
 | Flag | Description |
 | ---- | ----------- |
+| `--account string` | Expected provider account. |
 | `-b, --backend string` | Backend to use (required with --non-interactive). |
 | `-c, --config string` | Path of the manifest to create. Default: `secrets.yaml`. |
+| `--environment string` | Provider environment (Infisical default dev). |
 | `--file stringArray` | File or directory to synchronize; repeat for each entry (required with --non-interactive). Default: `[]`. |
 | `-f, --force` | Overwrite an existing manifest without asking. |
 | `--non-interactive` | Create a manifest from flags without prompting. |
 | `--project string` | Project name (required with --non-interactive). |
+| `--server string` | Provider instance URL (Bitwarden or Infisical). |
 
 ### `vault-sync login`
 

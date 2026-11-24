@@ -82,6 +82,10 @@ VERSION                  current release version, MAJOR.MINOR.PATCH (source of t
 
 - `internal/sync`, `internal/config` and `internal/cli` must never import a
   concrete backend, except `internal/cli/root.go`, which registers backends.
+- Container initialization is optional through `backend.ProjectInitializer`: expose
+  non-secret setup fields, authenticate and create/reuse a container without
+  uploading files, then return its portable configuration. CLI must stay
+  provider-independent.
 - A new backend = new package implementing `backend.Backend` + one
   `Register` call. No changes to `sync`, `config` or existing manifests.
 - Resolution must be explicit: zero matches → `backend.NotFoundError`, more

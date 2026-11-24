@@ -36,7 +36,13 @@ keeps its own login. Check with `which -a bw`, remove the extra one, or set
 
 The backend drives the official [Bitwarden Password Manager CLI](https://bitwarden.com/help/cli/)
 (`bw`), so authentication, encryption and server configuration (including
-self-hosted servers via `bw config server`) are handled by Bitwarden itself.
+self-hosted servers) are handled by Bitwarden itself. Init asks for
+`backend.server` and an optional account email, logs in/unlocks and creates an
+empty personal folder. The server URL is saved in the manifest. On a new
+machine, vault-sync selects that server before logging in. If an existing
+session is for another server, run `vault-sync logout` and retry; vault-sync
+reports the mismatch before reading or writing files. Older manifests without
+`backend.server` continue to use the CLI's configured server.
 `bw` is installed on first use if it is missing (see
 [Provider CLIs](#provider-clis)).
 
@@ -104,6 +110,12 @@ read.
 | `VAULT_SYNC_BW_PATH`  | Path to the `bw` executable to use (skips lookup and install) |
 
 ## Infisical backend
+
+Init asks for the server, environment and optional account, authenticates, and
+creates an empty secrets-management project (or reuses an accessible project).
+It saves the resolved project ID, server URL and environment in `secrets.yaml`.
+A project path suffix creates the corresponding empty native folder.
+
 
 Authentication is handled by the official
 [Infisical CLI](https://infisical.com/docs/cli/overview) (`infisical`);

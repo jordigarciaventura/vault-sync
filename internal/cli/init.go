@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/jordigarciaventura/vault-sync/internal/backend"
 	"github.com/jordigarciaventura/vault-sync/internal/config"
 	"github.com/jordigarciaventura/vault-sync/internal/filesystem"
 )
@@ -29,24 +30,26 @@ func newInitCommand(a *app) *cobra.Command {
 	var force, nonInteractive bool
 	var dest, backendType, project string
 	var files []string
+	var settings manifestBackend
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create a secrets.yaml interactively or from flags",
-		Long: `Create a manifest by answering a few questions: the file name, the backend,
-the project name in the provider and the files to synchronize.
+		Long: `Log in to a provider, create an empty remote container and save its location
+in secrets.yaml. Answer questions about the backend settings, project
+name, and files to synchronize. Existing accessible containers are reused.
 
 Use --non-interactive with --backend, --project and repeated --file flags
 to create a manifest without prompts. --config selects the output path.
 
 The manifest is validated before it is written. An existing file is only
-replaced after confirmation (or with --force). Optional backend settings
-(account, environment, server) can be added to the file afterwards.`,
+replaced after confirmation (or with --force). Initialization authenticates and
+may create remote resources, but never uploads files.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if nonInteractive {
-				return a.runInitNonInteractive(cmd, force, dest, backendType, project, files)
+				return a.runInitNonInteractive(cmd, force, dest, backendType, project, files, settings)
 			}
-			for _, name := range []string{"config", "backend", "project", "file"} {
+			for _, name := range []string{"config", "backend", "project", "file", "account", "environment", "server"} {
 				if cmd.Flags().Changed(name) {
 					return fmt.Errorf("--%s requires --non-interactive", name)
 				}
@@ -54,6 +57,9 @@ replaced after confirmation (or with --force). Optional backend settings
 			return a.runInit(cmd, force)
 		},
 	}
+	cmd.Flags().StringVar(&settings.Account, "account", "", "expected provider account")
+	cmd.Flags().StringVar(&settings.Environment, "environment", "", "provider environment (Infisical default dev)")
+	cmd.Flags().StringVar(&settings.Server, "server", "", "provider instance URL (Bitwarden or Infisical)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "overwrite an existing manifest without asking")
 	cmd.Flags().BoolVar(&nonInteractive, "non-interactive", false, "create a manifest from flags without prompting")
 	cmd.Flags().StringVarP(&dest, "config", "c", config.DefaultFileName, "path of the manifest to create")
@@ -128,15 +134,20 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 		p.warn("unknown backend %q; enter a number or one of: %s", answer, strings.Join(types, ", "))
 	}
 
+	settings, err := a.initSettings(ctx, backendType, manifestBackend{}, p, false)
+	if err != nil {
+		return err
+	}
+
 	// Project.
 	var project string
 	_, _ = fmt.Fprintln(out)
 	for {
-		answer, err := p.ask(ctx, "Project name in "+backendType, filepath.Base(root))
+		answer, err := p.ask(ctx, "Container name (project/folder[/prefix]) in "+backendType, filepath.Base(root))
 		if err != nil {
 			return err
 		}
-		m := manifest{Backend: manifestBackend{Type: backendType}, Project: answer, Files: []manifestFile{{Path: ".env"}}}
+		m := manifest{Backend: settings, Project: answer, Files: []manifestFile{{Path: ".env"}}}
 		if problems := m.problems(root, types); len(problems) > 0 {
 			p.warn("%s", strings.Join(problems, "; "))
 			continue
@@ -146,7 +157,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	}
 
 	// Files.
-	m := manifest{Backend: manifestBackend{Type: backendType}, Project: project}
+	m := manifest{Backend: settings, Project: project}
 	_, _ = fmt.Fprintf(out, "\nFiles to sync, one per line, relative to %s or absolute.\nLeave empty to finish.\n", displayDir(root))
 	for {
 		def := ""
@@ -176,8 +187,36 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	if _, err := config.Parse(data, root, config.Options{KnownBackends: types}); err != nil {
 		return fmt.Errorf("generated manifest is invalid: %w", err)
 	}
+	for {
+		err := a.initializeManifest(ctx, &m, root, false)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, backend.ErrContainerUnavailable) {
+			return err
+		}
+		p.warn("%v", err)
+		for {
+			name, askErr := p.ask(ctx, "Another container name", "")
+			if askErr != nil {
+				return askErr
+			}
+			candidate := m
+			candidate.Project = name
+			if problems := candidate.problems(root, types); len(problems) > 0 {
+				p.warn("%s", strings.Join(problems, "; "))
+				continue
+			}
+			m = candidate
+			break
+		}
+	}
+	data, err = m.marshal()
+	if err != nil {
+		return err
+	}
 	if _, err := filesystem.WriteFile(dest, data, manifestPermissions, filesystem.Options{}); err != nil {
-		return fmt.Errorf("write %s: %w", dest, err)
+		return fmt.Errorf("write %s: %w; the initialized remote container is retained, retry init after fixing the local path", dest, err)
 	}
 
 	rel := displayPath(dest)
@@ -199,7 +238,10 @@ type manifest struct {
 }
 
 type manifestBackend struct {
-	Type string `yaml:"type"`
+	Type        string `yaml:"type"`
+	Account     string `yaml:"account,omitempty"`
+	Environment string `yaml:"environment,omitempty"`
+	Server      string `yaml:"server,omitempty"`
 }
 
 type manifestFile struct {
@@ -344,7 +386,7 @@ func displayDir(dir string) string {
 	return "the current directory"
 }
 
-func (a *app) runInitNonInteractive(cmd *cobra.Command, force bool, name, backendType, project string, files []string) error {
+func (a *app) runInitNonInteractive(cmd *cobra.Command, force bool, name, backendType, project string, files []string, settings manifestBackend) error {
 	if backendType == "" || project == "" || len(files) == 0 {
 		return errors.New("--non-interactive requires --backend, --project and at least one --file")
 	}
@@ -357,7 +399,11 @@ func (a *app) runInitNonInteractive(cmd *cobra.Command, force bool, name, backen
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	m := manifest{Backend: manifestBackend{Type: backendType}, Project: project}
+	settings, err = a.initSettings(cmd.Context(), backendType, settings, nil, true)
+	if err != nil {
+		return err
+	}
+	m := manifest{Backend: settings, Project: project}
 	for _, path := range files {
 		m.Files = append(m.Files, manifestFile{Path: path})
 	}
@@ -371,9 +417,84 @@ func (a *app) runInitNonInteractive(cmd *cobra.Command, force bool, name, backen
 	if err := cmd.Context().Err(); err != nil {
 		return err
 	}
+	if err := a.initializeManifest(cmd.Context(), &m, filepath.Dir(dest), true); err != nil {
+		return err
+	}
+	data, err = m.marshal()
+	if err != nil {
+		return err
+	}
 	if _, err := filesystem.WriteFile(dest, data, manifestPermissions, filesystem.Options{}); err != nil {
-		return fmt.Errorf("write %s: %w", dest, err)
+		return fmt.Errorf("write %s: %w; the initialized remote container is retained, retry init after fixing the local path", dest, err)
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Created %s with %s.\n", displayPath(dest), plural(len(files)))
+	return nil
+}
+
+func (m manifestBackend) config(nonInteractive bool) backend.Config {
+	return backend.Config{Type: m.Type, Account: m.Account, Environment: m.Environment, Server: m.Server, NonInteractive: nonInteractive}
+}
+
+func (a *app) initSettings(ctx context.Context, typ string, settings manifestBackend, p *prompter, nonInteractive bool) (manifestBackend, error) {
+	settings.Type = typ
+	// Inspect setup metadata without authenticating or installing a tool.
+	b, err := a.registry.New(backend.Config{Type: typ, NonInteractive: nonInteractive})
+	if err != nil {
+		return settings, err
+	}
+	defer func() { _ = b.Close() }()
+	initializer, ok := b.(backend.ProjectInitializer)
+	if !ok {
+		return settings, nil
+	}
+	for _, field := range initializer.SetupFields() {
+		var value *string
+		switch field.Key {
+		case "account":
+			value = &settings.Account
+		case "environment":
+			value = &settings.Environment
+		case "server":
+			value = &settings.Server
+		default:
+			return settings, fmt.Errorf("unsupported backend setup field %q", field.Key)
+		}
+		if nonInteractive {
+			if *value == "" {
+				*value = field.Default
+			}
+			continue
+		}
+		*value, err = p.ask(ctx, field.Label, field.Default)
+		if err != nil {
+			return settings, err
+		}
+	}
+	return settings, nil
+}
+
+func (a *app) initializeManifest(ctx context.Context, m *manifest, root string, nonInteractive bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	b, err := a.registry.New(m.Backend.config(nonInteractive))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = b.Close() }()
+	initializer, ok := b.(backend.ProjectInitializer)
+	if !ok {
+		return nil
+	}
+	setup, err := initializer.InitializeProject(ctx, m.Project)
+	if err != nil {
+		return fmt.Errorf("initialize %s container: %w", b.Name(), err)
+	}
+	m.Project = setup.Project
+	m.Backend = manifestBackend{Type: setup.Config.Type, Account: setup.Config.Account, Environment: setup.Config.Environment, Server: setup.Config.Server}
+	// Provider-returned locations must also satisfy manifest validation.
+	if problems := m.problems(root, a.registry.Types()); len(problems) > 0 {
+		return fmt.Errorf("initialized container has invalid configuration: %s", strings.Join(problems, "; "))
+	}
 	return nil
 }

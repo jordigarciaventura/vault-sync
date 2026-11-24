@@ -20,11 +20,14 @@ Run this in your project and answer the prompts:
 vault-sync init
 ```
 
-This creates a `secrets.yaml` like this:
+Init logs you in, creates an empty backend container and saves its location
+in `secrets.yaml`. It collects the server and account settings for
+Bitwarden and Infisical. For example:
 
 ```yaml
 backend:
   type: bitwarden
+  server: https://vault.bitwarden.com
 project: Example
 files:
   - path: .env
@@ -42,9 +45,8 @@ On another machine, clone the repository and restore them:
 vault-sync pull
 ```
 
-Both commands prompt you to log in when needed. Commit `secrets.yaml`, which
-contains only configuration; keep secret files out of
-version control.
+Each machine authenticates with the selected provider. Commit `secrets.yaml`, which
+contains only configuration; keep secret files out of version control.
 
 ## Documentation
 
