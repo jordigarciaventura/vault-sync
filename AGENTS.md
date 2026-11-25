@@ -9,7 +9,7 @@ repository. Read [README.md](README.md) (user docs) and
 `vault-sync` is a small Go CLI that restores project files (`.env`, keys, …)
 from a secrets provider using a declarative `secrets.yaml`. Backends:
 Bitwarden (via the official `bw` CLI) and Infisical (`infisical` CLI for
-authentication, REST API for secrets), and Amazon S3 (official AWS CLI).
+authentication, REST API for secrets), Amazon S3 (official AWS CLI) and Cloudflare R2 (Wrangler OAuth, REST API).
 
 ## Commands
 
@@ -65,6 +65,7 @@ internal/config/         secrets.yaml parsing + validation (provider-independent
 internal/backend/        Backend interface, sentinel errors, Registry
 internal/backend/bitwarden/  bw CLI adapter: client.go (exec), resolver.go (pure matching), backend.go
 internal/backend/infisical/  cli.go (auth via infisical CLI), api.go (REST), layout.go (pure mapping), backend.go
+internal/backend/r2/     Cloudflare R2 adapter; Wrangler OAuth and REST API binary streams
 internal/backend/s3/     AWS CLI adapter; bucket/prefix namespaces and binary streams
 internal/toolinstall/    finds provider CLIs; installs them on first use (brew, else SHA-256-verified GitHub download)
 internal/sync/           pull/push orchestration + directory expansion (backend interfaces only)
@@ -86,7 +87,8 @@ VERSION                  current release version, MAJOR.MINOR.PATCH (source of t
 - Container initialization is optional through `backend.ProjectInitializer`: expose
   non-secret setup fields, authenticate and create/reuse a container without
   uploading files, then return its portable configuration. CLI must stay
-  provider-independent. `backend.region` selects the S3 bucket region.
+  provider-independent. `backend.region` selects the S3 bucket region; R2 uses the REST API and
+  `backend.account` selects its Cloudflare account.
 - A new backend = new package implementing `backend.Backend` + one
   `Register` call. No changes to `sync`, `config` or existing manifests.
 - Resolution must be explicit: zero matches → `backend.NotFoundError`, more
@@ -105,14 +107,14 @@ VERSION                  current release version, MAJOR.MINOR.PATCH (source of t
 - Never pass secret values as process arguments (they show up in `ps`);
   the Bitwarden adapter sends JSON on stdin.
 - Never read the bw stdout into error messages (it may contain secrets).
-  The same applies to `infisical` stdout (tokens) and Infisical API response
+  The same applies to `infisical` stdout (tokens) and Infisical and R2 API response
   bodies: only the server's short `message` field may be shown.
 - Writes go through `filesystem.WriteFile` (temp file → chmod → fsync →
   rename). Do not write destinations directly.
 - Default permissions are `0600`, new directories `0700`.
 - Downloaded tools must be verified against the SHA-256 digest GitHub
   publishes for the release asset; never install an unverified binary.
-- Do not run `bw`, `infisical` or `aws` against real provider accounts from tests or from the
+- Do not run `bw`, `infisical`, `aws` or `wrangler` against real provider accounts from tests or from the
   agent shell. Unit tests use the in-memory fakes in
   `bitwarden/backend_test.go` and `infisical/backend_test.go` (httptest).
   Real-vault tests live behind the `integration` and `e2e` build tags; the

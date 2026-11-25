@@ -44,7 +44,8 @@ to create a manifest without prompts. --config selects the output path.
 The manifest is validated before it is written. An existing file is only
 replaced after confirmation (or with --force). Initialization authenticates and
 may create remote resources, but never uploads files. For S3, select a bucket
-name and region; AWS browser login starts when credentials are unavailable.`,
+name and region; AWS browser login starts when credentials are unavailable.
+R2 uses Wrangler browser login and asks for your Cloudflare account ID.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if nonInteractive {
@@ -58,7 +59,7 @@ name and region; AWS browser login starts when credentials are unavailable.`,
 			return a.runInit(cmd, force)
 		},
 	}
-	cmd.Flags().StringVar(&settings.Account, "account", "", "expected provider account (AWS account ID for S3)")
+	cmd.Flags().StringVar(&settings.Account, "account", "", "provider account (AWS account ID for S3; Cloudflare account ID for R2)")
 	cmd.Flags().StringVar(&settings.Region, "region", "", "S3 bucket region (default us-east-1)")
 	cmd.Flags().StringVar(&settings.Environment, "environment", "", "provider environment (Infisical default dev)")
 	cmd.Flags().StringVar(&settings.Server, "server", "", "provider instance URL (Bitwarden or Infisical)")

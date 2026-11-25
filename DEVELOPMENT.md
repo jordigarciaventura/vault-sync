@@ -20,8 +20,10 @@ follow are in [AGENTS.md](AGENTS.md).
 - [golangci-lint](https://golangci-lint.run/) v2
 - [GoReleaser](https://goreleaser.com/) ≥ 2.19 (only for release checks)
 - Nothing provider-specific: `bw` / `infisical` / `aws` are installed on first use
-  (see `internal/toolinstall`; AWS CLI requires Homebrew or manual installation) when you run `pull`/`push` against a real
-  provider
+  (see `internal/toolinstall`; AWS CLI and Wrangler require Homebrew or manual installation) when you run `pull`/`push` against a real
+  provider. R2 uses `wrangler` for browser authentication, installed lazily via
+  Homebrew (`cloudflare-wrangler`) or manually with `npm install --global wrangler`.
+  `CLOUDFLARE_API_TOKEN` allows R2 automation without installing Wrangler.
 
 ## Tasks
 
@@ -136,7 +138,7 @@ configuration and the canonical project reference. Init never uploads files.
 Providers lacking this optional interface retain manifest-only initialization. `validate` loads the manifest and constructs/closes the backend to check
 provider settings; lazy constructors must not install CLIs or authenticate.
 `backend.Config.NonInteractive` disables terminal authentication in Bitwarden and Infisical
-and is passed by init/login/pull/push. S3 also uses it to disable browser login. Environment credentials remain available:
+and is passed by init/login/pull/push. S3 and R2 also use it to disable browser login. Environment credentials remain available:
 Bitwarden API keys (`BW_CLIENTID`/`BW_CLIENTSECRET`), `BW_PASSWORD` for unlocking,
 `BW_SESSION`, and Infisical's existing `INFISICAL_TOKEN` support. Bitwarden
 credential-command errors omit provider output; credentials must never appear
@@ -245,6 +247,7 @@ internal/config/             secrets.yaml parsing + validation (provider-indepen
 internal/backend/            Backend interface, sentinel errors, Registry
 internal/backend/bitwarden/  bw CLI adapter
 internal/backend/infisical/  Infisical adapter: CLI for auth, REST API for secrets
+internal/backend/r2/         Cloudflare R2: Wrangler OAuth + REST API
 internal/backend/s3/         AWS CLI adapter; bucket/prefix namespaces and binary object streams
 internal/toolinstall/        finds provider CLIs; installs them on first use (brew or verified GitHub download)
 internal/sync/               pull/push orchestration and recursive directory expansion
@@ -259,7 +262,7 @@ VERSION                      current release version (source of truth for releas
 ```
 
 `internal/cli` → `internal/config` + `internal/sync` → `backend.Backend`
-interface ← `internal/backend/{bitwarden,infisical,s3}`. The sync service and config never
+interface ← `internal/backend/{bitwarden,infisical,s3,r2}`. The sync service and config never
 import a provider. To add a backend, implement `backend.Backend` in
 `internal/backend/<name>/` and register its factory in `internal/cli/root.go`:
 
@@ -437,3 +440,27 @@ and rejects a logged-in server mismatch. Infisical init persists the resolved
 project ID, environment and server URL. Initialization failures do not replace
 the local manifest, and remotely created containers are retained for retry.
 The existing real-account E2E suite covers Bitwarden and Infisical only.
+
+## R2 development
+
+The R2 adapter uses Wrangler for browser OAuth and token refresh (`auth token
+--json`), and Cloudflare's REST API for bucket setup, raw file bodies and
+paginated directory listings. `backend.account` selects the Cloudflare account;
+credentials never belong in the manifest. `CLOUDFLARE_API_TOKEN` takes precedence
+and bypasses Wrangler for automation. Existing Wrangler sessions work without a
+terminal; missing sessions start browser login only when interactive. The
+optional `AccountManager` supports login/logout, including login before a
+manifest exists. Logout leaves environment credentials for the user to unset.
+
+Wrangler is resolved lazily through `VAULT_SYNC_WRANGLER_PATH`, PATH or Homebrew
+(`cloudflare-wrangler`); other platforms can install it with npm. It runs in an
+isolated temporary directory to avoid loading a project's config or secret
+files. Token-command output and API error bodies are never included in errors.
+Tokens live only in memory; Wrangler owns session persistence and refresh.
+HTTP requests reject redirects and preserve encoded object bytes. Init checks
+an existing bucket before creation and never uploads files or changes public
+access settings. The REST API upload limit is 300 MB per file.
+
+Tests use `httptest`, fake authentication runners and a fake executable. Never
+run Wrangler or API requests against real accounts from tests or the agent
+shell. The real-account E2E suite still covers Bitwarden and Infisical only.

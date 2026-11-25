@@ -6,18 +6,19 @@
 
 Each backend drives its provider's official CLI: `bw` for
 [Bitwarden](#bitwarden-backend), `infisical` for [Infisical](#infisical-backend),
-and `aws` for [Amazon S3](#amazon-s3-backend).
+`aws` for [Amazon S3](#amazon-s3-backend), and `wrangler` for
+[Cloudflare R2](#cloudflare-r2-backend).
 Installing vault-sync does **not** install them. Instead, the first time a
 command needs one (because `secrets.yaml` uses that backend, or
 `vault-sync login --backend …`), vault-sync looks for it and installs it if
 it is missing:
 
-1. the path in `VAULT_SYNC_BW_PATH` / `VAULT_SYNC_INFISICAL_PATH` / `VAULT_SYNC_AWS_PATH`, if set;
+1. the path in `VAULT_SYNC_BW_PATH` / `VAULT_SYNC_INFISICAL_PATH` / `VAULT_SYNC_AWS_PATH` / `VAULT_SYNC_WRANGLER_PATH`, if set;
 2. the executable on `PATH`;
 3. a copy vault-sync downloaded earlier, in `~/.local/share/vault-sync/bin`
    (or `$XDG_DATA_HOME/vault-sync/bin`);
 4. otherwise it installs it: with **Homebrew** (`brew install bitwarden-cli` or
-   `brew install infisical` / `brew install awscli`) when `brew` is available, or else by downloading
+   `brew install infisical` / `brew install awscli` / `brew install cloudflare-wrangler`) when `brew` is available, or else by downloading
    the latest official release from GitHub
    ([bitwarden/clients](https://github.com/bitwarden/clients/releases),
    [Infisical/cli](https://github.com/Infisical/cli/releases)) into the
@@ -273,3 +274,59 @@ keep the bucket private and configure its encryption and access policies.
 
 The adapter uses the official [AWS S3 CLI commands](https://docs.aws.amazon.com/cli/latest/reference/s3/)
 and [paginated ListObjectsV2 API](https://docs.aws.amazon.com/cli/latest/reference/s3api/list-objects-v2.html).
+
+## Cloudflare R2 backend
+
+```yaml
+backend:
+  type: r2
+  account: "0123456789abcdef0123456789abcdef" # Cloudflare account ID
+project: my-secret-bucket/app
+files:
+  - path: .env
+```
+
+`project` selects an R2 bucket and optional key prefix. Files are stored as exact
+object bytes, including empty and binary files. Directory discovery lists every
+page of objects beneath the prefix. Pull and push require an existing bucket.
+
+**Browser login.** Run `vault-sync init` and select `r2`. Enter your Cloudflare
+account ID and bucket name; vault-sync reuses your Wrangler session or opens
+Wrangler's browser OAuth login when no usable session exists. You do not need
+to generate S3 access keys or configure the AWS CLI. You can also log in ahead
+of time with `wrangler login`, or use `vault-sync login --backend r2` before
+creating a manifest. With a manifest, `vault-sync login` reuses the selected
+provider. `vault-sync logout` ends the shared Wrangler session.
+
+**Installation.** Wrangler is found through `VAULT_SYNC_WRANGLER_PATH` or PATH,
+then installed via Homebrew (`cloudflare-wrangler`) if available. Without
+Homebrew, install it with `npm install --global wrangler`. Use a current
+Wrangler version supporting `wrangler auth token --json`; Wrangler owns session
+storage and automatically refreshes expired OAuth tokens. Token output is kept
+in memory and never printed. Wrangler runs outside the project so it cannot
+load project configuration or `.env` files.
+
+**Automation.** `--non-interactive` never starts browser login. It reuses an
+existing Wrangler session or accepts `CLOUDFLARE_API_TOKEN`, which takes
+precedence and requires no Wrangler installation. Use a Cloudflare API bearer
+token authorized for R2 operations in the selected account, rather than S3
+access keys. Grant read access for pulls/listing and write access for pushes
+and bucket creation. Environment tokens must be unset to log out. Credentials
+never belong in `secrets.yaml`.
+
+**Initialization.** Init checks the bucket before creating it if missing.
+New buckets are private by default; existing public access settings remain
+unchanged. Initialization requires permission to inspect the bucket and create
+it when missing. `backend.account` is required for data operations; it selects
+the account in API requests. `backend.server` and `backend.environment` are
+unsupported. Region is unnecessary (`auto` is accepted for compatibility).
+Jurisdiction-specific buckets are not currently supported.
+
+The adapter uses the Cloudflare REST API for raw file uploads/downloads and
+paginated object listings, authenticated with Wrangler's OAuth token or the
+environment API token. The REST API limits uploads to 300 MB per file.
+
+See [Wrangler authentication](https://developers.cloudflare.com/workers/wrangler/commands/general/#auth-token),
+[object uploads](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/objects/methods/upload/),
+[object listings](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/objects/methods/list/) and
+[bucket creation rules](https://developers.cloudflare.com/r2/buckets/create-buckets/).

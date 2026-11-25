@@ -21,11 +21,11 @@ checks normalized paths, duplicate destinations and Go regular expressions.
 
 | Key                     | Required | Description                                                                 |
 | ----------------------- | -------- | --------------------------------------------------------------------------- |
-| `backend.type`          | yes      | Backend identifier. Supported: `bitwarden`, `infisical`, `s3`.                    |
-| `backend.account`       | no       | Expected provider account (AWS account ID for S3) (see [providers](providers.md)).       |
+| `backend.type`          | yes      | Backend identifier. Supported: `bitwarden`, `infisical`, `s3`, `r2`.                    |
+| `backend.account`       | no       | Expected provider account (AWS account ID for S3); required Cloudflare account ID for R2 (see [providers](providers.md)).       |
 | `backend.environment`   | no       | Provider environment (Infisical only; default `dev`).                       |
 | `backend.server`        | no       | Provider instance URL (Bitwarden or Infisical).          |
-| `backend.region`        | no       | S3 bucket region; saved by init and passed to AWS commands. |
+| `backend.region`        | no       | S3 bucket region; R2 does not need a region (`auto` is accepted for compatibility). |
 | `project`               | yes      | Provider container, optionally followed by `/folder/subfolder` (see below). |
 | `files[].path`          | yes      | Local file or directory **and** logical resource name.                            |
 | `files[].regex`         | no       | Go regular expression filtering paths relative to a directory. |
@@ -131,6 +131,9 @@ and `BW_PASSWORD` for unlocking on each pull/push invocation; an existing
 session key in memory only, so it cannot export a session to later commands.
 These use the provider's [documented API key and password environment options](https://bitwarden.com/help/cli/).
 For S3, use AWS environment credentials or a configured AWS profile/role.
+For R2, set `backend.account` to the Cloudflare account ID. Interactive commands
+use Wrangler browser login; automation can reuse a Wrangler session or set
+`CLOUDFLARE_API_TOKEN`. `--non-interactive` never opens a browser. See [R2 setup](providers.md#cloudflare-r2-backend).
 For Infisical, supply `INFISICAL_TOKEN` and optionally `INFISICAL_DOMAIN`;
 `login --non-interactive` checks the existing token or user session.
 Credentials stay in environment variables rather than command arguments or
@@ -150,7 +153,7 @@ Notices go to stderr; use `vault-sync self-upgrade` to install an update.
 
 Use `project: vault-sync/example` to share one provider container across
 repositories. The first segment selects the Bitwarden folder, Infisical
-project or S3 bucket; the remaining segments prefix all remote filenames. For example,
+project or S3/R2 bucket; the remaining segments prefix all remote filenames. For example,
 `config/.env` lives at `example/config/.env` inside `vault-sync`. Pull and
 directory discovery return names relative to `example`.
 

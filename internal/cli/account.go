@@ -35,7 +35,8 @@ current account instead.
 
 Use --non-interactive to forbid prompts. Bitwarden accepts BW_CLIENTID and
 BW_CLIENTSECRET for API key login; pull/push also accept BW_PASSWORD to unlock.
-Infisical accepts INFISICAL_TOKEN. Existing provider sessions are reused.
+Infisical accepts INFISICAL_TOKEN. R2 uses Wrangler browser login or
+CLOUDFLARE_API_TOKEN. Existing provider sessions are reused.
 
 The backend, expected account and server are taken from secrets.yaml when
 one is found; otherwise pass --backend. A session to another server than the
