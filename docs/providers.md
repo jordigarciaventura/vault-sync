@@ -115,7 +115,8 @@ read.
 
 Init asks for the server, environment and optional account, authenticates, and
 creates an empty secrets-management project (or reuses an accessible project).
-It saves the resolved project ID, server URL and environment in `secrets.yaml`.
+It preserves the supplied project name, slug or ID (including any folder suffix)
+and saves the server URL and environment in `secrets.yaml`.
 A project path suffix creates the corresponding empty native folder.
 
 

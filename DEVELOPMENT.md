@@ -134,7 +134,7 @@ and `--region`. It validates before remote setup, authenticates without prompts,
 initializes an empty container, then writes its portable location. Interactive
 init obtains setting prompts through `backend.ProjectInitializer.SetupFields`;
 `InitializeProject` performs provider-specific creation and returns non-secret
-configuration and the canonical project reference. Init never uploads files.
+configuration and the portable project reference. Init never uploads files.
 Providers lacking this optional interface retain manifest-only initialization. `validate` loads the manifest and constructs/closes the backend to check
 provider settings; lazy constructors must not install CLIs or authenticate.
 `backend.Config.NonInteractive` disables terminal authentication in Bitwarden and Infisical
@@ -436,8 +436,8 @@ allows interactive init to ask for another name without repeating other setup
 questions; non-interactive init returns the error immediately.
 
 Bitwarden init persists the server URL; the adapter selects it while logged out
-and rejects a logged-in server mismatch. Infisical init persists the resolved
-project ID, environment and server URL. Initialization failures do not replace
+and rejects a logged-in server mismatch. Infisical init preserves the supplied
+project name, slug or ID and folder suffix, alongside the environment and server URL. Initialization failures do not replace
 the local manifest, and remotely created containers are retained for retry.
 The existing real-account E2E suite covers Bitwarden and Infisical only.
 

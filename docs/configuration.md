@@ -104,7 +104,7 @@ This requires working environment credentials or a provider session; it never
 opens a browser or reads authentication prompts. Interactive init collects these
 settings and drives provider login when needed. It saves the S3 region and
 verified AWS account ID, the Bitwarden server and folder, or the Infisical
-server, environment and resolved project ID. AWS profiles are local credential
+server, environment and supplied project reference. AWS profiles are local credential
 settings and are not stored in the manifest; select one with `AWS_PROFILE`.
 A new machine needs its own credentials with access to the saved container.
 

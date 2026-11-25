@@ -20,7 +20,7 @@ func (b *Backend) SetupFields() []backend.SetupField {
 	}
 }
 
-// InitializeProject logs in, creates or resolves the project and persists its ID.
+// InitializeProject logs in, creates or resolves the project and preserves the supplied reference.
 func (b *Backend) InitializeProject(ctx context.Context, ref string) (backend.ProjectSetup, error) {
 	container, prefix, err := backend.SplitProject(ref)
 	if err != nil {
@@ -45,11 +45,10 @@ func (b *Backend) InitializeProject(ctx context.Context, ref string) (backend.Pr
 		if err := b.api.createFolder(ctx, id, b.env, "/"+prefix); err != nil {
 			return backend.ProjectSetup{}, fmt.Errorf("initialize Infisical folder: %w", err)
 		}
-		id += "/" + prefix
 	}
 	server := b.server
 	if server == "" {
 		server = strings.TrimSuffix(b.api.base, "/api")
 	}
-	return backend.ProjectSetup{Project: id, Config: backend.Config{Type: Type, Account: b.account, Environment: b.env, Server: server}}, nil
+	return backend.ProjectSetup{Project: ref, Config: backend.Config{Type: Type, Account: b.account, Environment: b.env, Server: server}}, nil
 }
