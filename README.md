@@ -20,11 +20,17 @@ Run this in your project and answer the prompts:
 vault-sync init
 ```
 
+Init discovers `.env` and `.env.*` files below the manifest directory and lets
+you select which to include. You can then enter other secret file or directory
+paths; manual entries have no default.
+
 Init logs you in, creates an empty backend container and saves its location
 in `secrets.yaml`. For S3, it asks for the bucket name and AWS region; for
 R2, it asks for the Cloudflare account ID; for Bitwarden and Infisical, it
 collects the server and account settings. Successful interactive runs remember
-your backend, provider settings and project prefix as defaults for next time.
+your manifest path, backend, provider settings and project prefix for next time.
+Forms keep built-in defaults visible alongside the last value, which is selected
+by default. You can also enter another value.
 For example, `vault-sync/example` makes the next project default
 `vault-sync/<manifest folder name>`. The generated manifest looks like:
 

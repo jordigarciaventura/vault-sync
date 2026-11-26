@@ -18,7 +18,7 @@ func TestInitWritesValidManifest(t *testing.T) {
 
 	// File name, backend, project, files: defaults where empty; one invalid
 	// path and one duplicate are rejected and re-asked.
-	input := "\n1\nMy Project\n\n../escape\napp/.env\n./app/.env\n/shared/x.key\n\n"
+	input := "\n1\nMy Project\n.env\n../escape\napp/.env\n./app/.env\n/shared/x.key\n\n"
 	out, err := runInput(t, memFactory, input, "init")
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
@@ -92,7 +92,7 @@ func TestInitExistingManifest(t *testing.T) {
 	}
 
 	// --force overwrites without asking.
-	if out, err := runInput(t, memFactory, "\n\nproj\n\n\n", "init", "--force"); err != nil {
+	if out, err := runInput(t, memFactory, "\n\nproj\n.env\n\n", "init", "--force"); err != nil {
 		t.Fatalf("init --force: %v\n%s", err, out)
 	}
 	if data, _ := os.ReadFile(p); !strings.Contains(string(data), "project: proj") {
@@ -102,10 +102,47 @@ func TestInitExistingManifest(t *testing.T) {
 
 func TestInitRequiresAFile(t *testing.T) {
 	t.Chdir(t.TempDir())
-	// Clearing the default first file is not possible: an empty answer
-	// selects ".env", so the manifest always has at least one file.
-	out, err := runInput(t, memFactory, "\n\np\n\n\n", "init")
-	if err != nil || !strings.Contains(out, "with 1 file.") {
+	// Empty manual entries must not silently add .env.
+	out, err := runInput(t, memFactory, "\n\np\n\n", "init")
+	if err == nil || !strings.Contains(out, "add at least one") {
 		t.Fatalf("err=%v\n%s", err, out)
+	}
+	if _, err := os.Stat("secrets.yaml"); !os.IsNotExist(err) {
+		t.Fatal("empty selection wrote manifest")
+	}
+}
+
+func TestInitSelectsDiscoveredFiles(t *testing.T) {
+	for _, choice := range []string{"2", ""} {
+		t.Run("choice="+choice, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			for _, name := range []string{".env", ".env.local"} {
+				if err := os.WriteFile(name, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			out, err := runInput(t, memFactory, "\nmemory\nproject\n"+choice+"\nother-secret\n\n", "init")
+			if err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			data, err := os.ReadFile("secrets.yaml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := config.Parse(data, mustWorkingDir(t), config.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if choice != "" {
+				want = 2
+			}
+			if len(cfg.Files) != want || strings.Contains(string(data), "path: .env\n") {
+				t.Fatalf("unexpected selection: %s", data)
+			}
+			if choice != "" && !strings.Contains(string(data), "path: .env.local") {
+				t.Fatalf("missing selected file: %s", data)
+			}
+		})
 	}
 }

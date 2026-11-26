@@ -43,10 +43,10 @@ func TestInitRemembersDefaultsAcrossRuns(t *testing.T) {
 		err := cmd.Execute()
 		return out.String(), err
 	}
-	if out, err := run("first/secrets.yaml\nbeta\nhttps://custom.example\nprod\n123\neu-west-1\nvault-sync/nested/example\n\n\n", "init"); err != nil {
+	if out, err := run("first/secrets.yaml\nbeta\nhttps://custom.example\nprod\n123\neu-west-1\nvault-sync/nested/example\n.env\n\n", "init"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	out, err := run("second/secrets.yaml\n\n\n\n\n\n\n\n\n", "init")
+	out, err := run("second/secrets.yaml\n\n\n\n\n\n\n.env\n\n", "init")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -75,7 +75,7 @@ func TestInitRemembersDefaultsAcrossRuns(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("preferences changed")
 	}
-	out, err = run("third/secrets.yaml\nalpha\n\n\nother\n\nplain\n\n\n", "init")
+	out, err = run("third/secrets.yaml\nalpha\n\n\nother\n\nplain\n.env\n\n", "init")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -93,8 +93,52 @@ func TestInitRemembersDefaultsAcrossRuns(t *testing.T) {
 	if err := os.WriteFile(name, []byte("[invalid"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out, err = run("fourth/secrets.yaml\nalpha\n\n\nx\n\nplain\n\n\n", "init")
+	out, err = run("fourth/secrets.yaml\nalpha\n\n\nx\n\nplain\n.env\n\n", "init")
 	if err != nil || !strings.Contains(out, "could not load init defaults") {
 		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+func TestInitRemembersManifestPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	configDir := t.TempDir()
+	run := func(input string) (string, error) {
+		r := backend.NewRegistry()
+		r.Register("memory", memFactory)
+		var out strings.Builder
+		a := &app{registry: r, stdin: strings.NewReader(input), stdout: &out, stderr: &out, userConfigDir: func() (string, error) { return configDir, nil }}
+		cmd := newRootCommand(a)
+		cmd.SetArgs([]string{"init"})
+		err := cmd.Execute()
+		return out.String(), err
+	}
+	if out, err := run("vault.yaml\n\nproject\nsecret.txt\n\n"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	a := &app{userConfigDir: func() (string, error) { return configDir, nil }}
+	prefs, _, err := a.loadInitDefaults()
+	if err != nil || prefs.Manifest != "vault.yaml" {
+		t.Fatalf("prefs=%+v err=%v", prefs, err)
+	}
+	// Accepting the remembered path must still ask before overwriting it.
+	out, err := run("\ny\n\nproject\nother.txt\n\n")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for _, want := range []string{"secrets.yaml", "vault.yaml", "Manifest file [vault.yaml]", "already exists. Overwrite"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in %s", want, out)
+		}
+	}
+	if _, err := os.Stat("secrets.yaml"); !os.IsNotExist(err) {
+		t.Fatal("created built-in path instead of remembered path")
+	}
+	// Cancelling another path must preserve the saved choice.
+	if _, err := run("other.yaml\n"); err == nil {
+		t.Fatal("expected incomplete input error")
+	}
+	prefs, _, err = a.loadInitDefaults()
+	if err != nil || prefs.Manifest != "vault.yaml" {
+		t.Fatalf("cancel changed prefs=%+v err=%v", prefs, err)
 	}
 }

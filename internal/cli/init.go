@@ -11,10 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
+	"charm.land/huh/v2"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"github.com/jordigarciaventura/vault-sync/internal/backend"
@@ -37,6 +38,8 @@ func newInitCommand(a *app) *cobra.Command {
 		Long: `Log in to a provider, create an empty remote container and save its location
 in secrets.yaml. Answer questions about the backend settings, project or
 bucket name, and files to synchronize. Existing accessible containers are reused.
+Init discovers .env and .env.* files below the manifest directory and lets you
+select which to use, then asks for other secret paths with no default.
 
 Use --non-interactive with --backend, --project and repeated --file flags
 to create a manifest without prompts. --config selects the output path.
@@ -78,6 +81,10 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	p := &prompter{in: bufio.NewReader(a.stdin), out: out}
+	if f, ok := a.stdin.(*os.File); ok {
+		p.terminal = term.IsTerminal(int(f.Fd()))
+		p.terminalInput = f
+	}
 	types := a.registry.Types()
 	if len(types) == 0 {
 		return errors.New("no backends are available")
@@ -89,12 +96,13 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	}
 
 	// File name.
-	var dest string
+	var dest, manifestPath string
 	for {
-		name, err := p.ask(ctx, "Manifest file", config.DefaultFileName)
+		name, err := p.askDefault(ctx, "Manifest file", config.DefaultFileName, prefs.Manifest)
 		if err != nil {
 			return err
 		}
+		manifestPath = name
 		if dest, err = filepath.Abs(name); err != nil {
 			return err
 		}
@@ -123,29 +131,13 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	root := filepath.Dir(dest)
 
 	// Backend.
-	_, _ = fmt.Fprintln(out, "\nBackends:")
-	for i, t := range types {
-		_, _ = fmt.Fprintf(out, "  %d) %s\n", i+1, t)
-	}
 	backendDefault := types[0]
 	if slices.Contains(types, prefs.Backend) {
 		backendDefault = prefs.Backend
 	}
-	var backendType string
-	for {
-		answer, err := p.ask(ctx, "Backend", backendDefault)
-		if err != nil {
-			return err
-		}
-		if n, err := strconv.Atoi(answer); err == nil && n >= 1 && n <= len(types) {
-			backendType = types[n-1]
-			break
-		}
-		if slices.Contains(types, strings.ToLower(answer)) {
-			backendType = strings.ToLower(answer)
-			break
-		}
-		p.warn("unknown backend %q; enter a number or one of: %s", answer, strings.Join(types, ", "))
+	backendType, err := p.selectBackend(ctx, types, backendDefault)
+	if err != nil {
+		return err
 	}
 
 	settings, err := a.initSettings(ctx, backendType, prefs.Providers[backendType].Settings, p, false)
@@ -157,7 +149,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	var project string
 	_, _ = fmt.Fprintln(out)
 	for {
-		answer, err := p.ask(ctx, "Container name (bucket/project/folder[/prefix]) in "+backendType, prefs.Providers[backendType].ProjectPrefix+filepath.Base(root))
+		answer, err := p.askDefault(ctx, "Container name (bucket/project/folder[/prefix]) in "+backendType, filepath.Base(root), prefs.Providers[backendType].ProjectPrefix+filepath.Base(root))
 		if err != nil {
 			return err
 		}
@@ -172,17 +164,30 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 
 	// Files.
 	m := manifest{Backend: settings, Project: project}
-	_, _ = fmt.Fprintf(out, "\nFiles to sync, one per line, relative to %s or absolute.\nLeave empty to finish.\n", displayDir(root))
-	for {
-		def := ""
-		if len(m.Files) == 0 {
-			def = ".env"
+	discovered, err := discoverEnvFiles(ctx, root)
+	if err != nil {
+		return err
+	}
+	if len(discovered) > 0 {
+		selected, err := p.selectFiles(ctx, discovered)
+		if err != nil {
+			return err
 		}
-		answer, err := p.ask(ctx, fmt.Sprintf("File %d", len(m.Files)+1), def)
+		for _, path := range selected {
+			m.Files = append(m.Files, manifestFile{Path: path})
+		}
+	}
+	_, _ = fmt.Fprintf(out, "\nAdd other secret files or directories, one per line, relative to %s or absolute.\nLeave empty to finish.\n", displayDir(root))
+	for {
+		answer, err := p.ask(ctx, fmt.Sprintf("File %d", len(m.Files)+1), "")
 		if err != nil {
 			return err
 		}
 		if answer == "" {
+			if len(m.Files) == 0 {
+				p.warn("add at least one secret file or directory")
+				continue
+			}
 			break
 		}
 		candidate := m
@@ -235,7 +240,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 		return fmt.Errorf("write %s: %w; the initialized remote container is retained, retry init after fixing the local path", dest, err)
 	}
 
-	if err := prefs.save(prefsPath, backendType, settings, chosenProject); err != nil {
+	if err := prefs.save(prefsPath, backendType, settings, chosenProject, manifestPath); err != nil {
 		p.warn("manifest created, but could not save init defaults; check permissions for %s", prefsPath)
 	}
 
@@ -316,13 +321,20 @@ func (m manifest) problems(root string, types []string) []string {
 
 // prompter asks questions on out and reads answers line by line.
 type prompter struct {
-	in  *bufio.Reader
-	out io.Writer
+	in            *bufio.Reader
+	out           io.Writer
+	terminal      bool
+	terminalInput io.Reader
 }
 
 // ask prints label (with def as the default) and returns the trimmed answer,
 // or def when the answer is empty.
 func (p *prompter) ask(ctx context.Context, label, def string) (string, error) {
+	if p.terminal {
+		answer := def
+		err := p.form(ctx, huh.NewInput().Title(label).Value(&answer))
+		return strings.TrimSpace(answer), err
+	}
 	if def != "" {
 		_, _ = fmt.Fprintf(p.out, "%s [%s]: ", label, def)
 	} else {
@@ -339,6 +351,11 @@ func (p *prompter) ask(ctx context.Context, label, def string) (string, error) {
 }
 
 func (p *prompter) confirm(ctx context.Context, question string) (bool, error) {
+	if p.terminal {
+		var answer bool
+		err := p.form(ctx, huh.NewConfirm().Title(question).Value(&answer))
+		return answer, err
+	}
 	answer, err := p.ask(ctx, question+" [y/N]", "")
 	if err != nil {
 		return false, err
@@ -488,11 +505,7 @@ func (a *app) initSettings(ctx context.Context, typ string, settings manifestBac
 			}
 			continue
 		}
-		def := *value
-		if def == "" {
-			def = field.Default
-		}
-		*value, err = p.ask(ctx, field.Label, def)
+		*value, err = p.askDefault(ctx, field.Label, field.Default, *value)
 		if err != nil {
 			return settings, err
 		}

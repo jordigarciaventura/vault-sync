@@ -132,11 +132,20 @@ Notes:
 and optional `--config`/`--force` plus `--account`, `--server`, `--environment`
 and `--region`. It validates before remote setup, authenticates without prompts,
 initializes an empty container, then writes its portable location. Interactive
-init obtains setting prompts through `backend.ProjectInitializer.SetupFields`;
+init uses Huh forms for terminal input (text fields, confirmations, backend
+selection and environment-file multiselection sized to show all options when
+terminal space permits), with line-based prompts for
+redirected input. Discovery inspects names only, skips symlinks and common
+dependency/build directories, and is rooted at the manifest directory. Manual
+file entries have no default; at least one selected or entered path is required.
+Interactive init obtains setting prompts through `backend.ProjectInitializer.SetupFields`;
 `InitializeProject` performs provider-specific creation and returns non-secret
 configuration and the portable project reference. Init never uploads files. Interactive init saves non-secret prompt settings per
-backend and the last selected backend in `vault-sync/init-defaults.yaml` under
+backend, the last manifest path and the last selected backend in `vault-sync/init-defaults.yaml` under
 `os.UserConfigDir()`, using the atomic filesystem writer with mode `0600`.
+Default-bearing Huh prompts offer the built-in value, the last value (selected),
+and an option to enter another value; identical values appear only once.
+Manual file entries remain blank.
 It remembers the entered project prefix (everything before the final slash),
 not a resolved project ID. Preferences are saved only after the manifest is
 written; cancelled/failed runs and non-interactive runs do not change them.

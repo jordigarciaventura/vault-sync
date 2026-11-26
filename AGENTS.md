@@ -123,7 +123,7 @@ VERSION                  current release version, MAJOR.MINOR.PATCH (source of t
 
 ## Conventions
 
-- Go ≥ 1.26 (see `go.mod`), standard library first; dependencies are cobra,
+- Go ≥ 1.26 (see `go.mod`), standard library first; dependencies include Huh (terminal forms), cobra,
   yaml.v3, x/mod, x/term. Ask before adding more.
 - Errors: wrap with `%w`, lower-case, no trailing punctuation; user-facing
   errors should say how to fix the problem.

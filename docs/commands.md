@@ -44,6 +44,8 @@ vault-sync [command] [flags]
 Log in to a provider, create an empty remote container and save its location
 in secrets.yaml. Answer questions about the backend settings, project or
 bucket name, and files to synchronize. Existing accessible containers are reused.
+Init discovers .env and .env.* files below the manifest directory and lets you
+select which to use, then asks for other secret paths with no default.
 
 Use --non-interactive with --backend, --project and repeated --file flags
 to create a manifest without prompts. --config selects the output path.

@@ -170,11 +170,15 @@ names before using this layout. A bulk migration command is not yet available.
 ### Remembered init defaults
 
 Successful interactive `init` runs remember the selected backend and each
-backend's server URL, environment, account and region on this machine.
+backend's server URL, environment, account and region on this machine, plus
+the last manifest path. Default-bearing forms show the built-in value and the
+last value (selected by default), without duplicates, plus an option to enter
+another value. For example, after using `vault.yaml`, the manifest picker
+offers `secrets.yaml` and `vault.yaml`, with `vault.yaml` selected.
 Project names retain only the prefix: after entering `vault-sync/example`,
 the next default is `vault-sync/<manifest folder name>`. Nested prefixes
 are preserved; entering a name without a slash clears that backend's prefix.
-File selections and manifest paths are not remembered.
+File selections are not remembered; manual secret paths still have no default.
 
 Preferences are stored with permissions `0600` in
 `vault-sync/init-defaults.yaml` under the OS user configuration directory
@@ -183,3 +187,20 @@ on Linux). Delete this file to reset the defaults. Credentials are never
 stored here. Unreadable or malformed preferences produce a warning and use
 built-in defaults. A save failure warns without failing manifest creation.
 Non-interactive init ignores these preferences and does not update them.
+
+### Interactive file selection
+
+Interactive `init` uses Huh forms for text input, confirmations and backend
+selection. It recursively discovers `.env` and `.env.*` files under the manifest
+directory using filenames only. Use Space to toggle files and Enter to confirm;
+no files are selected initially. The picker expands to show all discovered files
+when terminal space permits; longer lists remain scrollable. Leave all unchecked to skip discovery results.
+Symlinks and `.git`, `node_modules`, `vendor`, `.venv`, `venv`, `dist`, `build`,
+`.next` and `.codegraph` directories are skipped. Git-ignored environment files
+are still discovered.
+
+After selection, enter any other secret file or directory paths, one at a time.
+These entries have no default; an empty entry finishes once at least one path
+has been selected or entered. Redirected input uses numbered, line-based choices;
+file selections accept comma-separated numbers, or an empty line to skip.
+Non-interactive init continues to use explicit `--file` flags without discovery.

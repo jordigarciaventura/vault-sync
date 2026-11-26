@@ -14,6 +14,7 @@ import (
 // Only non-secret prompt answers belong here, never provider credentials or
 // provider-returned project IDs. A nil userConfigDir disables persistence.
 type initDefaults struct {
+	Manifest  string                          `yaml:"manifest,omitempty"`
 	Backend   string                          `yaml:"backend"`
 	Providers map[string]initProviderDefaults `yaml:"providers"`
 }
@@ -46,7 +47,7 @@ func (a *app) loadInitDefaults() (initDefaults, string, error) {
 	return prefs, name, nil
 }
 
-func (p initDefaults) save(name, typ string, settings manifestBackend, project string) error {
+func (p initDefaults) save(name, typ string, settings manifestBackend, project, manifestPath string) error {
 	if name == "" {
 		return nil
 	}
@@ -57,6 +58,7 @@ func (p initDefaults) save(name, typ string, settings manifestBackend, project s
 	if i := strings.LastIndex(project, "/"); i >= 0 {
 		prefix = project[:i+1]
 	}
+	p.Manifest = manifestPath
 	p.Backend = typ
 	p.Providers[typ] = initProviderDefaults{Settings: settings, ProjectPrefix: prefix}
 	data, err := yaml.Marshal(p)
