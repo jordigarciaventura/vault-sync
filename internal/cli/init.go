@@ -45,7 +45,9 @@ The manifest is validated before it is written. An existing file is only
 replaced after confirmation (or with --force). Initialization authenticates and
 may create remote resources, but never uploads files. For S3, select a bucket
 name and region; AWS browser login starts when credentials are unavailable.
-R2 uses Wrangler browser login and asks for your Cloudflare account ID.`,
+R2 uses Wrangler browser login and asks for your Cloudflare account ID.
+Successful interactive runs remember backend settings and the project prefix
+as defaults for future interactive runs on this machine.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if nonInteractive {
@@ -79,6 +81,11 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	types := a.registry.Types()
 	if len(types) == 0 {
 		return errors.New("no backends are available")
+	}
+
+	prefs, prefsPath, err := a.loadInitDefaults()
+	if err != nil {
+		p.warn("could not load init defaults; using built-in defaults")
 	}
 
 	// File name.
@@ -120,9 +127,13 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	for i, t := range types {
 		_, _ = fmt.Fprintf(out, "  %d) %s\n", i+1, t)
 	}
+	backendDefault := types[0]
+	if slices.Contains(types, prefs.Backend) {
+		backendDefault = prefs.Backend
+	}
 	var backendType string
 	for {
-		answer, err := p.ask(ctx, "Backend", types[0])
+		answer, err := p.ask(ctx, "Backend", backendDefault)
 		if err != nil {
 			return err
 		}
@@ -137,7 +148,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 		p.warn("unknown backend %q; enter a number or one of: %s", answer, strings.Join(types, ", "))
 	}
 
-	settings, err := a.initSettings(ctx, backendType, manifestBackend{}, p, false)
+	settings, err := a.initSettings(ctx, backendType, prefs.Providers[backendType].Settings, p, false)
 	if err != nil {
 		return err
 	}
@@ -146,7 +157,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	var project string
 	_, _ = fmt.Fprintln(out)
 	for {
-		answer, err := p.ask(ctx, "Container name (bucket/project/folder[/prefix]) in "+backendType, filepath.Base(root))
+		answer, err := p.ask(ctx, "Container name (bucket/project/folder[/prefix]) in "+backendType, prefs.Providers[backendType].ProjectPrefix+filepath.Base(root))
 		if err != nil {
 			return err
 		}
@@ -190,6 +201,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	if _, err := config.Parse(data, root, config.Options{KnownBackends: types}); err != nil {
 		return fmt.Errorf("generated manifest is invalid: %w", err)
 	}
+	chosenProject := m.Project
 	for {
 		err := a.initializeManifest(ctx, &m, root, false)
 		if err == nil {
@@ -211,6 +223,7 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 				continue
 			}
 			m = candidate
+			chosenProject = name
 			break
 		}
 	}
@@ -220,6 +233,10 @@ func (a *app) runInit(cmd *cobra.Command, force bool) error {
 	}
 	if _, err := filesystem.WriteFile(dest, data, manifestPermissions, filesystem.Options{}); err != nil {
 		return fmt.Errorf("write %s: %w; the initialized remote container is retained, retry init after fixing the local path", dest, err)
+	}
+
+	if err := prefs.save(prefsPath, backendType, settings, chosenProject); err != nil {
+		p.warn("manifest created, but could not save init defaults; check permissions for %s", prefsPath)
 	}
 
 	rel := displayPath(dest)
@@ -471,7 +488,11 @@ func (a *app) initSettings(ctx context.Context, typ string, settings manifestBac
 			}
 			continue
 		}
-		*value, err = p.ask(ctx, field.Label, field.Default)
+		def := *value
+		if def == "" {
+			def = field.Default
+		}
+		*value, err = p.ask(ctx, field.Label, def)
 		if err != nil {
 			return settings, err
 		}

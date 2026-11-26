@@ -53,6 +53,8 @@ replaced after confirmation (or with --force). Initialization authenticates and
 may create remote resources, but never uploads files. For S3, select a bucket
 name and region; AWS browser login starts when credentials are unavailable.
 R2 uses Wrangler browser login and asks for your Cloudflare account ID.
+Successful interactive runs remember backend settings and the project prefix
+as defaults for future interactive runs on this machine.
 
 ```text
 vault-sync init [flags]

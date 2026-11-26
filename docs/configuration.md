@@ -166,3 +166,20 @@ Changing `project` selects a different remote location; it does not move existin
 secrets. Existing Bitwarden folders named literally `vault-sync/example` must
 be moved manually to the `vault-sync` folder with `example/` prefixed to item
 names before using this layout. A bulk migration command is not yet available.
+
+### Remembered init defaults
+
+Successful interactive `init` runs remember the selected backend and each
+backend's server URL, environment, account and region on this machine.
+Project names retain only the prefix: after entering `vault-sync/example`,
+the next default is `vault-sync/<manifest folder name>`. Nested prefixes
+are preserved; entering a name without a slash clears that backend's prefix.
+File selections and manifest paths are not remembered.
+
+Preferences are stored with permissions `0600` in
+`vault-sync/init-defaults.yaml` under the OS user configuration directory
+(`~/Library/Application Support` on macOS; `$XDG_CONFIG_HOME` or `~/.config`
+on Linux). Delete this file to reset the defaults. Credentials are never
+stored here. Unreadable or malformed preferences produce a warning and use
+built-in defaults. A save failure warns without failing manifest creation.
+Non-interactive init ignores these preferences and does not update them.

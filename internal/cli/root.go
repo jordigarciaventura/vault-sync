@@ -24,10 +24,11 @@ const updateCheckCommand = "__update-check"
 
 // app holds dependencies shared by commands; tests replace them.
 type app struct {
-	registry *backend.Registry
-	stdin    io.Reader
-	stdout   io.Writer
-	stderr   io.Writer
+	registry      *backend.Registry
+	stdin         io.Reader
+	stdout        io.Writer
+	stderr        io.Writer
+	userConfigDir func() (string, error)
 }
 
 // Registry returns the backends compiled into vault-sync.
@@ -75,7 +76,7 @@ Typical workflow after cloning a repository:
 
 // Execute runs the CLI and returns the process exit code.
 func Execute(ctx context.Context, args []string) int {
-	a := &app{registry: Registry(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
+	a := &app{registry: Registry(), stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr, userConfigDir: os.UserConfigDir}
 	return execute(ctx, args, a, updater.NewChecker(version.Current()))
 }
 

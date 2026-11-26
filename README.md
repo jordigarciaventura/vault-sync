@@ -23,7 +23,10 @@ vault-sync init
 Init logs you in, creates an empty backend container and saves its location
 in `secrets.yaml`. For S3, it asks for the bucket name and AWS region; for
 R2, it asks for the Cloudflare account ID; for Bitwarden and Infisical, it
-collects the server and account settings. For example:
+collects the server and account settings. Successful interactive runs remember
+your backend, provider settings and project prefix as defaults for next time.
+For example, `vault-sync/example` makes the next project default
+`vault-sync/<manifest folder name>`. The generated manifest looks like:
 
 ```yaml
 backend:

@@ -134,7 +134,13 @@ and `--region`. It validates before remote setup, authenticates without prompts,
 initializes an empty container, then writes its portable location. Interactive
 init obtains setting prompts through `backend.ProjectInitializer.SetupFields`;
 `InitializeProject` performs provider-specific creation and returns non-secret
-configuration and the portable project reference. Init never uploads files.
+configuration and the portable project reference. Init never uploads files. Interactive init saves non-secret prompt settings per
+backend and the last selected backend in `vault-sync/init-defaults.yaml` under
+`os.UserConfigDir()`, using the atomic filesystem writer with mode `0600`.
+It remembers the entered project prefix (everything before the final slash),
+not a resolved project ID. Preferences are saved only after the manifest is
+written; cancelled/failed runs and non-interactive runs do not change them.
+Tests inject a temporary config directory; unset injection disables persistence.
 Providers lacking this optional interface retain manifest-only initialization. `validate` loads the manifest and constructs/closes the backend to check
 provider settings; lazy constructors must not install CLIs or authenticate.
 `backend.Config.NonInteractive` disables terminal authentication in Bitwarden and Infisical
